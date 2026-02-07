@@ -244,7 +244,7 @@ namespace InspectorManager.UI
             EditorGUILayout.LabelField("ショートカット", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Ctrl+L: アクティブInspectorのロック切り替え\n" +
-                "Ctrl+Shift+L: 全Inspectorのロック切り替え\n" +
+                "Ctrl+Alt+L: 全Inspectorのロック切り替え\n" +
                 "Ctrl+[: 履歴を戻る\n" +
                 "Ctrl+]: 履歴を進む\n" +
                 "Ctrl+D: お気に入りに追加/削除",

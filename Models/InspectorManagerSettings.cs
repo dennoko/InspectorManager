@@ -82,7 +82,7 @@ namespace InspectorManager.Models
                 _recordSceneObjects = true,
                 _recordAssets = true,
                 _autoCleanInvalidHistory = true,
-                _blockFolderSelection = false
+                _blockFolderSelection = true
             };
         }
 

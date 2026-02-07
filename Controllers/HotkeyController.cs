@@ -40,9 +40,9 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
-        /// 全Inspectorのロックを切り替え (Ctrl+Shift+L)
+        /// 全Inspectorのロックを切り替え (Ctrl+Alt+L)
         /// </summary>
-        [Shortcut("Inspector Manager/Toggle All Locks", KeyCode.L, ShortcutModifiers.Action | ShortcutModifiers.Shift)]
+        [Shortcut("Inspector Manager/Toggle All Locks", KeyCode.L, ShortcutModifiers.Action | ShortcutModifiers.Alt)]
         public static void ToggleAllLocks()
         {
             var inspectorService = ServiceLocator.Instance.TryResolve<IInspectorWindowService>();
