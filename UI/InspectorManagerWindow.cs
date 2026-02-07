@@ -16,6 +16,7 @@ namespace InspectorManager.UI
         private InspectorStatusView _inspectorStatusView;
         private HistoryListView _historyListView;
         private FavoritesListView _favoritesListView;
+        private InspectorOverlayController _overlayController;
 
         // Controllers
         private RotationLockController _rotationLockController;
@@ -62,6 +63,10 @@ namespace InspectorManager.UI
             EventBus.Instance.Unsubscribe<FavoritesUpdatedEvent>(OnFavoritesUpdated);
             EventBus.Instance.Unsubscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Unsubscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
+            
+            // オーバーレイコントローラの破棄
+            _overlayController?.Dispose();
+            _overlayController = null;
         }
 
         private void Initialize()
@@ -100,6 +105,10 @@ namespace InspectorManager.UI
             _inspectorStatusView = new InspectorStatusView(_inspectorService);
             _historyListView = new HistoryListView(_historyService, _favoritesService);
             _favoritesListView = new FavoritesListView(_favoritesService);
+
+            // オーバーレイ初期化（既存があれば破棄してから）
+            _overlayController?.Dispose();
+            _overlayController = new InspectorOverlayController(_inspectorService);
 
             _isInitialized = true;
         }
