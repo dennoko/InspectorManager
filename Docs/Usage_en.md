@@ -19,7 +19,7 @@ You can navigate back and forth through your selection history, just like a web 
 
 ### ⭐ Favorites
 Bookmark frequently used objects to your Favorites list.
-Select an object and press `Ctrl+D` to add it, or drag and drop from the History list.
+Drag and drop from the History list to add.
 
 ### 🔒 Inspector Overlay
 Each Inspector window displays an overlay header at the top, showing its index number and lock status.
@@ -30,10 +30,7 @@ Clicking the overlay button toggles the lock state of that specific Inspector.
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl + L` | Toggle active Inspector lock |
-| `Ctrl + Alt + L` | Toggle all Inspector locks |
-| `Ctrl + [` | Backward history |
-| `Ctrl + ]` | Forward history |
-| `Ctrl + D` | Add/Remove current selection to/from Favorites |
+
 
 ## Settings
 
