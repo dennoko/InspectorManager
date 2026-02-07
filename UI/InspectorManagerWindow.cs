@@ -27,13 +27,14 @@ namespace InspectorManager.UI
         private IHistoryService _historyService;
         private IFavoritesService _favoritesService;
         private IPersistenceService _persistenceService;
+        private ILocalizationService _localizationService;
 
         // Settings
         private InspectorManagerSettings _settings;
 
         // UI State
         private int _selectedTab;
-        private readonly string[] _tabNames = { "Inspector状態", "履歴", "お気に入り", "設定" };
+        // タブ名は都度取得するように変更するため削除
         private bool _isInitialized;
 
         [MenuItem("dennokoworks/Inspector Manager")]
@@ -54,6 +55,9 @@ namespace InspectorManager.UI
             EventBus.Instance.Subscribe<FavoritesUpdatedEvent>(OnFavoritesUpdated);
             EventBus.Instance.Subscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Subscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
+            
+            if (_localizationService != null)
+                _localizationService.OnLanguageChanged += Repaint;
         }
 
         private void OnDisable()
@@ -64,6 +68,9 @@ namespace InspectorManager.UI
             EventBus.Instance.Unsubscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Unsubscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
             
+            if (_localizationService != null)
+                _localizationService.OnLanguageChanged -= Repaint;
+
             // オーバーレイコントローラの破棄
             _overlayController?.Dispose();
             _overlayController = null;
@@ -77,6 +84,10 @@ namespace InspectorManager.UI
             _persistenceService = new EditorPrefsPersistence();
             ServiceLocator.Instance.Register<IPersistenceService, EditorPrefsPersistence>(
                 (EditorPrefsPersistence)_persistenceService);
+
+            _localizationService = new LocalizationService(_persistenceService);
+            ServiceLocator.Instance.Register<ILocalizationService, LocalizationService>(
+                (LocalizationService)_localizationService);
 
             _inspectorService = new InspectorWindowService();
             ServiceLocator.Instance.Register<IInspectorWindowService, InspectorWindowService>(
@@ -92,6 +103,12 @@ namespace InspectorManager.UI
 
             // 設定の読み込み
             _settings = _persistenceService.Load("Settings", InspectorManagerSettings.CreateDefault());
+            
+            // 言語設定の反映
+            ((LocalizationService)_localizationService).Initialize(_settings.Language);
+            
+            // ウィンドウタイトル更新
+            titleContent = new GUIContent(_localizationService.GetString("Window_Title"));
 
             // コントローラーの初期化
             _rotationLockController = new RotationLockController(_inspectorService, _persistenceService);
@@ -102,13 +119,16 @@ namespace InspectorManager.UI
             _historyController = new HistoryController(_historyService, _favoritesService, _settings);
 
             // ビューの初期化
-            _inspectorStatusView = new InspectorStatusView(_inspectorService);
+            _inspectorStatusView = new InspectorStatusView(
+                _inspectorService, 
+                _rotationLockController,
+                _localizationService);
             _historyListView = new HistoryListView(_historyService, _favoritesService);
             _favoritesListView = new FavoritesListView(_favoritesService);
 
             // オーバーレイ初期化（既存があれば破棄してから）
             _overlayController?.Dispose();
-            _overlayController = new InspectorOverlayController(_inspectorService);
+            _overlayController = new InspectorOverlayController(_inspectorService, _localizationService);
 
             _isInitialized = true;
         }
@@ -119,6 +139,8 @@ namespace InspectorManager.UI
             {
                 Initialize();
             }
+            // 初期化失敗時は中断
+            if (_localizationService == null) return;
 
             // ヘッダー：ローテーションロックトグル
             DrawHeader();
@@ -126,7 +148,13 @@ namespace InspectorManager.UI
             EditorGUILayout.Space(4);
 
             // タブ
-            _selectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
+            var tabNames = new string[] {
+                _localizationService.GetString("Tab_Status"),
+                _localizationService.GetString("Tab_History"),
+                _localizationService.GetString("Tab_Favorites"),
+                _localizationService.GetString("Tab_Settings")
+            };
+            _selectedTab = GUILayout.Toolbar(_selectedTab, tabNames);
 
             EditorGUILayout.Space(4);
 
@@ -154,9 +182,13 @@ namespace InspectorManager.UI
             {
                 // ローテーションロックトグル
                 var isRotationEnabled = _rotationLockController?.IsEnabled ?? false;
+                var toggleText = isRotationEnabled 
+                    ? _localizationService.GetString("Rotation_On") 
+                    : _localizationService.GetString("Rotation_Off");
+                    
                 var toggleContent = new GUIContent(
-                    isRotationEnabled ? "🔄 ローテーション: ON" : "🔄 ローテーション: OFF",
-                    "複数Inspectorを自動でローテーションロック"
+                    toggleText,
+                    _localizationService.GetString("Rotation_Tooltip")
                 );
 
                 var newValue = GUILayout.Toggle(isRotationEnabled, toggleContent, Styles.ToolbarToggle);
@@ -169,14 +201,14 @@ namespace InspectorManager.UI
 
                 // Inspector数表示
                 var inspectorCount = _inspectorService?.GetAllInspectors().Count ?? 0;
-                GUILayout.Label($"Inspector: {inspectorCount}", EditorStyles.toolbarButton);
+                GUILayout.Label(_localizationService.GetString("Inspector_Count", inspectorCount), EditorStyles.toolbarButton);
             }
             EditorGUILayout.EndHorizontal();
         }
 
         private void DrawInspectorStatusTab()
         {
-            GUILayout.Label("Inspectorウィンドウ状態", Styles.HeaderLabel);
+            GUILayout.Label(_localizationService.GetString("Header_Status"), Styles.HeaderLabel);
             _inspectorStatusView?.Draw();
 
             EditorGUILayout.Space(8);
@@ -185,10 +217,10 @@ namespace InspectorManager.UI
             if (_rotationLockController != null && _rotationLockController.IsEnabled)
             {
                 EditorGUILayout.HelpBox(
-                    $"ローテーション有効\n次の更新対象: Inspector {_rotationLockController.CurrentTargetIndex + 1}",
+                    _localizationService.GetString("Rotation_Active", _rotationLockController.CurrentTargetIndex + 1),
                     MessageType.Info);
 
-                if (GUILayout.Button("手動でローテーション"))
+                if (GUILayout.Button(_localizationService.GetString("Button_ManualRotate")))
                 {
                     _rotationLockController.RotateToNext();
                 }
@@ -207,27 +239,46 @@ namespace InspectorManager.UI
 
         private void DrawSettingsTab()
         {
-            GUILayout.Label("設定", Styles.HeaderLabel);
+            GUILayout.Label(_localizationService.GetString("Header_Settings"), Styles.HeaderLabel);
 
             EditorGUI.BeginChangeCheck();
 
+            // 言語設定
+            GUILayout.Label(_localizationService.GetString("Setting_Language"), EditorStyles.boldLabel);
+            var languages = new string[] { "日本語", "English" };
+            var currentLangIndex = _settings.Language == "en" ? 1 : 0;
+            var newLangIndex = GUILayout.Toolbar(currentLangIndex, languages);
+            if (newLangIndex != currentLangIndex)
+            {
+                var newLang = newLangIndex == 1 ? "en" : "ja";
+                _settings.Language = newLang;
+                if (_localizationService is LocalizationService ls)
+                {
+                    ls.CurrentLanguage = newLang;
+                }
+                // タイトル即時更新
+                titleContent = new GUIContent(_localizationService.GetString("Window_Title"));
+            }
+
+            EditorGUILayout.Space(8);
+
             // 履歴設定
-            EditorGUILayout.LabelField("履歴", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_localizationService.GetString("Settings_History"), EditorStyles.boldLabel);
 
             _settings.MaxHistoryCount = EditorGUILayout.IntSlider(
-                "最大履歴数", _settings.MaxHistoryCount, 10, 200);
+                _localizationService.GetString("Settings_MaxHistory"), _settings.MaxHistoryCount, 10, 200);
 
             _settings.RecordSceneObjects = EditorGUILayout.Toggle(
-                "シーンオブジェクトを記録", _settings.RecordSceneObjects);
+                _localizationService.GetString("Settings_RecordScene"), _settings.RecordSceneObjects);
 
             _settings.RecordAssets = EditorGUILayout.Toggle(
-                "アセットを記録", _settings.RecordAssets);
+                _localizationService.GetString("Settings_RecordAssets"), _settings.RecordAssets);
 
             _settings.AutoCleanInvalidHistory = EditorGUILayout.Toggle(
-                "無効なエントリを自動削除", _settings.AutoCleanInvalidHistory);
+                _localizationService.GetString("Settings_AutoClean"), _settings.AutoCleanInvalidHistory);
 
             bool newBlockFolderSelection = EditorGUILayout.Toggle(
-                "フォルダ選択時の更新をブロック", _settings.BlockFolderSelection);
+                _localizationService.GetString("Settings_BlockFolder"), _settings.BlockFolderSelection);
             
             if (newBlockFolderSelection != _settings.BlockFolderSelection)
             {
@@ -241,32 +292,29 @@ namespace InspectorManager.UI
             EditorGUILayout.Space(8);
 
             // ショートカット情報
-            EditorGUILayout.LabelField("ショートカット", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_localizationService.GetString("Header_Shortcuts"), EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Ctrl+L: アクティブInspectorのロック切り替え\n" +
-                "Ctrl+Alt+L: 全Inspectorのロック切り替え\n" +
-                "Ctrl+[: 履歴を戻る\n" +
-                "Ctrl+]: 履歴を進む\n" +
-                "Ctrl+D: お気に入りに追加/削除",
+                _localizationService.GetString("Shortcut_Help"),
                 MessageType.None);
 
             EditorGUILayout.Space(8);
 
             // メンテナンス
-            EditorGUILayout.LabelField("メンテナンス", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_localizationService.GetString("Header_Maintenance"), EditorStyles.boldLabel);
 
             EditorGUILayout.BeginHorizontal();
             {
-                if (GUILayout.Button("無効なエントリを削除"))
+                if (GUILayout.Button(_localizationService.GetString("Button_CleanHistory")))
                 {
                     _historyController?.CleanupAll();
                 }
-                if (GUILayout.Button("全データをリセット"))
+                if (GUILayout.Button(_localizationService.GetString("Button_ResetAll")))
                 {
                     if (EditorUtility.DisplayDialog(
-                        "確認",
-                        "履歴・お気に入り・設定をすべてリセットしますか？",
-                        "リセット", "キャンセル"))
+                        _localizationService.GetString("Confirm_Reset_Title"),
+                        _localizationService.GetString("Confirm_Reset_Message"),
+                        _localizationService.GetString("Button_Reset"),
+                        _localizationService.GetString("Button_Cancel")))
                     {
                         _historyService?.ClearHistory();
                         var favorites = _favoritesService?.GetFavorites();
@@ -282,7 +330,16 @@ namespace InspectorManager.UI
                             }
                         }
                         _settings = InspectorManagerSettings.CreateDefault();
+                        // 念のため言語設定は維持する
+                        _settings.Language = _localizationService.CurrentLanguage;
+                        
                         SaveSettings();
+                        
+                        // 設定リセット後の再反映
+                         if (_rotationLockController != null)
+                        {
+                            _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
+                        }
                     }
                 }
             }

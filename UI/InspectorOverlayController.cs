@@ -14,6 +14,7 @@ namespace InspectorManager.UI
     public class InspectorOverlayController : IDisposable
     {
         private readonly IInspectorWindowService _inspectorService;
+        private readonly ILocalizationService _localizationService;
         private const string OverlayName = "InspectorManagerOverlay";
         private const string LockButtonName = "InspectorManagerLockButton";
         
@@ -24,15 +25,25 @@ namespace InspectorManager.UI
         private double _lastUpdateTime;
         private const double updateInterval = 0.5f; // 0.5秒おきにチェック
 
-        public InspectorOverlayController(IInspectorWindowService inspectorService)
+        public InspectorOverlayController(IInspectorWindowService inspectorService, ILocalizationService localizationService)
         {
             _inspectorService = inspectorService;
+            _localizationService = localizationService;
+            
             EditorApplication.update += OnUpdate;
+            if (_localizationService != null)
+            {
+                _localizationService.OnLanguageChanged += RefreshOverlays;
+            }
         }
 
         public void Dispose()
         {
             EditorApplication.update -= OnUpdate;
+            if (_localizationService != null)
+            {
+                _localizationService.OnLanguageChanged -= RefreshOverlays;
+            }
             RemoveAllOverlays();
         }
 
@@ -80,12 +91,11 @@ namespace InspectorManager.UI
             var root = inspector.rootVisualElement;
             if (root == null) return;
 
-            // 既存オーバーレイを確認（Dictionaryになくても、ヒエラルキーにあるかもしれないのでチェック）
+            // 既存オーバーレイを確認
             VisualElement overlay = null;
             if (_activeOverlays.TryGetValue(inspector, out var cachedOverlay))
             {
                 overlay = cachedOverlay;
-                // コンテナから削除されていたら再追加
                 if (overlay.parent == null)
                 {
                     root.Insert(0, overlay);
@@ -93,7 +103,6 @@ namespace InspectorManager.UI
             }
             else
             {
-                // まだ管理されていない場合、ヒエラルキーからも探す（再コンパイル後など）
                 overlay = root.Q(OverlayName);
                 if (overlay == null)
                 {
@@ -108,16 +117,19 @@ namespace InspectorManager.UI
             var button = overlay.Q<Button>(LockButtonName);
             if (button != null)
             {
-                string statusText = isLocked ? "🔒 Locked" : "🔓 Unlocked";
-                string displayText = $"Ispr #{index + 1} | {statusText}";
+                string statusText = isLocked 
+                    ? _localizationService.GetString("Overlay_Locked") 
+                    : _localizationService.GetString("Overlay_Unlocked");
+                
+                string displayText = _localizationService.GetString("Overlay_Format", index + 1, statusText);
 
                 if (button.text != displayText)
                 {
                     button.text = displayText;
                     // 色の更新
                     var color = isLocked 
-                        ? new Color(0.6f, 0.2f, 0.2f, 1f)  // 赤
-                        : new Color(0.2f, 0.2f, 0.2f, 1f); // グレー
+                        ? new Color(0.6f, 0.2f, 0.2f, 1f)
+                        : new Color(0.2f, 0.2f, 0.2f, 1f);
                     
                     button.style.backgroundColor = color;
                 }

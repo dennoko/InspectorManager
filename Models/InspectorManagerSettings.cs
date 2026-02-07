@@ -14,7 +14,17 @@ namespace InspectorManager.Models
         [SerializeField] private bool _recordSceneObjects = true;
         [SerializeField] private bool _recordAssets = true;
         [SerializeField] private bool _autoCleanInvalidHistory = true;
-        [SerializeField] private bool _blockFolderSelection = false;
+        [SerializeField] private bool _blockFolderSelection = true;
+        [SerializeField] private string _language = "ja";
+
+        /// <summary>
+        /// 言語設定 ("ja" or "en")
+        /// </summary>
+        public string Language
+        {
+            get => _language;
+            set => _language = value;
+        }
 
         /// <summary>
         /// フォルダ選択時にInspector更新をブロックするか
@@ -82,7 +92,8 @@ namespace InspectorManager.Models
                 _recordSceneObjects = true,
                 _recordAssets = true,
                 _autoCleanInvalidHistory = true,
-                _blockFolderSelection = true
+                _blockFolderSelection = true,
+                _language = "ja"
             };
         }
 
@@ -98,7 +109,8 @@ namespace InspectorManager.Models
                 _recordSceneObjects = _recordSceneObjects,
                 _recordAssets = _recordAssets,
                 _autoCleanInvalidHistory = _autoCleanInvalidHistory,
-                _blockFolderSelection = _blockFolderSelection
+                _blockFolderSelection = _blockFolderSelection,
+                _language = _language
             };
         }
     }

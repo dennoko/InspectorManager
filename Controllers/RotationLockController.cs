@@ -110,6 +110,44 @@ namespace InspectorManager.Controllers
             _lastKnownSelection = Selection.activeObject;
         }
 
+        // 除外されたInspector（手動で更新から外したもの）
+        private List<EditorWindow> _excludedWindows = new List<EditorWindow>();
+
+        public void SetExcluded(EditorWindow inspector, bool isExcluded)
+        {
+            if (isExcluded)
+            {
+                if (!_excludedWindows.Contains(inspector))
+                {
+                    _excludedWindows.Add(inspector);
+                    if (_rotationOrder.Contains(inspector))
+                    {
+                        _rotationOrder.Remove(inspector);
+                    }
+                    // 除外したらアンロックする？それともロックのまま？
+                    // 要望は「手動で更新から除外」＝固定したい、という意味合いが強いはず。
+                    // 元の挙動（更新されない）にするなら、Lock状態を維持（＝今のSelectionのまま）が正しいか、
+                    // あるいはUnity標準挙動に戻す（Unlock）か。
+                    // 「更新から除外」なので、Unityの更新からも、このツールの更新からも外れるべき。
+                    // ロックしておけばUnityの更新からは外れる。ツールの更新からも外す。
+                    _inspectorService.SetLocked(inspector, true);
+                }
+            }
+            else
+            {
+                if (_excludedWindows.Contains(inspector))
+                {
+                    _excludedWindows.Remove(inspector);
+                    SyncInspectorList(); // 再度ローテーションに組み込む
+                }
+            }
+        }
+
+        public bool IsExcluded(EditorWindow inspector)
+        {
+            return _excludedWindows.Contains(inspector);
+        }
+
         /// <summary>
         /// Inspector数の変更を検出して対応
         /// </summary>
@@ -123,10 +161,16 @@ namespace InspectorManager.Controllers
             {
                 _rotationOrder.Remove(removed);
             }
+
+            // 除外リストからも削除されたものを除去
+            _excludedWindows.RemoveAll(i => i == null || !currentInspectors.Contains(i));
             
             // 新しく追加されたInspectorを末尾に追加（ロック状態で）
             foreach (var inspector in currentInspectors)
             {
+                // 除外されているものは追加しない
+                if (_excludedWindows.Contains(inspector)) continue;
+
                 if (!_rotationOrder.Contains(inspector))
                 {
                     _rotationOrder.Add(inspector);
@@ -134,9 +178,11 @@ namespace InspectorManager.Controllers
                 }
             }
 
-            // 何らかの理由でアンロックされているものがあればロック
+            // 何らかの理由でアンロックされているものがあればロック（除外されているものは関知しない）
             foreach (var inspector in currentInspectors)
             {
+                if (_excludedWindows.Contains(inspector)) continue;
+
                 if (!_inspectorService.IsLocked(inspector) && !_isUpdating)
                 {
                     _inspectorService.SetLocked(inspector, true);
