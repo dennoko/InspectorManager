@@ -36,7 +36,7 @@ namespace InspectorManager.UI
         private readonly string[] _tabNames = { "Inspector状態", "履歴", "お気に入り", "設定" };
         private bool _isInitialized;
 
-        [MenuItem("Tools/Inspector Manager")]
+        [MenuItem("dennokoworks/Inspector Manager")]
         public static void ShowWindow()
         {
             var window = GetWindow<InspectorManagerWindow>();
