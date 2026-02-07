@@ -118,14 +118,14 @@ namespace InspectorManager.UI
                 // 除外/追加ボタン
                 if (_rotationLockController != null && _localizationService != null)
                 {
-                    var btnIcon = isExcluded ? "➕" : "➖"; // icon or text
+                    var btnIcon = isExcluded ? "Add" : "Excl"; // icon or text
                     var btnTooltip = isExcluded 
                         ? _localizationService.GetString("Tooltip_Include")
                         : _localizationService.GetString("Tooltip_Exclude");
                     
                     var btnContent = new GUIContent(btnIcon, btnTooltip);
 
-                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(24)))
+                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(64)))
                     {
                         _rotationLockController.SetExcluded(inspector, !isExcluded);
                     }
