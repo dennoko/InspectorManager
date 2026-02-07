@@ -1,0 +1,282 @@
+using System.Collections.Generic;
+using System.Linq;
+using InspectorManager.Core;
+using InspectorManager.Models;
+using UnityEditor;
+using UnityEngine;
+
+namespace InspectorManager.Controllers
+{
+    /// <summary>
+    /// ローテーションロック機能の制御
+    /// 常時全Inspectorをロックし、Selection変更時のみ対象Inspectorを一瞬アンロックして更新させる方式。
+    /// </summary>
+    public class RotationLockController
+    {
+        private readonly Services.IInspectorWindowService _inspectorService;
+        private readonly Services.IPersistenceService _persistence;
+
+        private bool _isEnabled;
+        
+        // ローテーション順序（EditorWindow参照で管理、インデックス0が更新対象）
+        private List<EditorWindow> _rotationOrder = new List<EditorWindow>();
+        
+        // 更新処理中フラグ
+        private bool _isUpdating;
+        
+        // 最後に認識した選択（無限ループ防止）
+        private Object _lastKnownSelection;
+
+        private const string SettingsKey = "RotationLockSettings";
+
+        public bool IsEnabled
+        {
+            get => _isEnabled;
+            set
+            {
+                if (_isEnabled != value)
+                {
+                    _isEnabled = value;
+                    SaveSettings();
+
+                    if (_isEnabled)
+                    {
+                        InitializeRotation();
+                    }
+                    else
+                    {
+                        // 無効化時はすべてアンロック
+                        _inspectorService.UnlockAll();
+                        _rotationOrder.Clear();
+                    }
+
+                    EventBus.Instance.Publish(new RotationLockStateChangedEvent { IsEnabled = _isEnabled });
+                }
+            }
+        }
+
+        // 現在の更新対象（次に更新されるInspector）のインデックス
+        public int CurrentTargetIndex
+        {
+            get
+            {
+                if (_rotationOrder.Count == 0) return 0;
+                var currentInspectors = _inspectorService.GetAllInspectors();
+                var target = _rotationOrder.FirstOrDefault();
+                
+                if (target != null)
+                {
+                    for (int i = 0; i < currentInspectors.Count; i++)
+                    {
+                        if (currentInspectors[i] == target) return i;
+                    }
+                }
+                return 0;
+            }
+        }
+
+        public RotationLockController(
+            Services.IInspectorWindowService inspectorService,
+            Services.IPersistenceService persistence)
+        {
+            _inspectorService = inspectorService;
+            _persistence = persistence;
+
+            LoadSettings();
+
+            // 選択変更イベントを購読
+            Selection.selectionChanged += OnSelectionChanged;
+        }
+
+        ~RotationLockController()
+        {
+            Selection.selectionChanged -= OnSelectionChanged;
+        }
+
+        public void InitializeRotation()
+        {
+            var inspectors = _inspectorService.GetAllInspectors();
+            if (inspectors.Count == 0) return;
+
+            _rotationOrder.Clear();
+
+            // 全てロックして管理リストに追加
+            foreach (var inspector in inspectors)
+            {
+                _inspectorService.SetLocked(inspector, true);
+                _rotationOrder.Add(inspector);
+            }
+
+            _lastKnownSelection = Selection.activeObject;
+        }
+
+        /// <summary>
+        /// Inspector数の変更を検出して対応
+        /// </summary>
+        private void SyncInspectorList()
+        {
+            var currentInspectors = _inspectorService.GetAllInspectors();
+            
+            // 削除されたInspectorを除去
+            var removedInspectors = _rotationOrder.Where(i => !currentInspectors.Contains(i)).ToList();
+            foreach (var removed in removedInspectors)
+            {
+                _rotationOrder.Remove(removed);
+            }
+            
+            // 新しく追加されたInspectorを末尾に追加（ロック状態で）
+            foreach (var inspector in currentInspectors)
+            {
+                if (!_rotationOrder.Contains(inspector))
+                {
+                    _rotationOrder.Add(inspector);
+                    _inspectorService.SetLocked(inspector, true);
+                }
+            }
+
+            // 何らかの理由でアンロックされているものがあればロック
+            foreach (var inspector in currentInspectors)
+            {
+                if (!_inspectorService.IsLocked(inspector) && !_isUpdating)
+                {
+                    _inspectorService.SetLocked(inspector, true);
+                }
+            }
+        }
+
+        public void RotateToNext()
+        {
+            if (!_isEnabled) return;
+            SyncInspectorList();
+            
+            // ローテーション順序を一つ進める（現在のSelectionを維持したまま）
+            if (_rotationOrder.Count > 0)
+            {
+                var current = _rotationOrder[0];
+                _rotationOrder.RemoveAt(0);
+                _rotationOrder.Add(current);
+            }
+        }
+
+        public bool BlockFolderSelection { get; set; }
+
+        private void OnSelectionChanged()
+        {
+            if (!_isEnabled) return;
+            // 更新処理中は再入を防ぐ
+            if (_isUpdating) return;
+
+            var newSelection = Selection.activeObject;
+            if (newSelection == null) return;
+            
+            // フォルダ判定
+            if (BlockFolderSelection)
+            {
+                var path = AssetDatabase.GetAssetPath(newSelection);
+                if (!string.IsNullOrEmpty(path) && AssetDatabase.IsValidFolder(path))
+                {
+                    // フォルダなら更新しない（現在のInspectorの内容を維持）
+                    return;
+                }
+            }
+            
+            // 同じオブジェクトなら無視
+            if (newSelection == _lastKnownSelection) return;
+            _lastKnownSelection = newSelection;
+
+            SyncInspectorList();
+            if (_rotationOrder.Count == 0) return;
+
+            // ローテーション更新処理を開始
+            PerformRotationUpdate(newSelection);
+        }
+
+        /// <summary>
+        /// 選択変更時のローテーション更新処理
+        /// </summary>
+        private void PerformRotationUpdate(Object newSelection)
+        {
+            if (_rotationOrder.Count == 0) return;
+
+            _isUpdating = true;
+
+            try
+            {
+                // 1. 更新対象のInspectorを取得（リストの先頭）
+                var targetInspector = _rotationOrder[0];
+
+                // 2. そのInspectorを一瞬アンロック
+                // UnityはアンロックされたInspectorに対して、現在のSelection内容を反映しようとする
+                _inspectorService.SetLocked(targetInspector, false);
+                
+                // 3. Selectionが反映されるように再描画を要求
+                targetInspector.Repaint();
+
+                // 4. 即座に再ロック（Unityの更新イベントループ内で処理されることを期待）
+                // ただし、即時ロックだと反映されない可能性があるため、delayCallを使用
+                EditorApplication.delayCall += () =>
+                {
+                    // もしこのフレームで反映されていなければ、Selectionを再セットして強制更新
+                    // （通常はUnlock状態でSelection変更イベントが来れば自動更新されるはずだが、
+                    //  ここでは既にイベントが来ているので手動でトリガーが必要な場合がある）
+                    
+                    // 念のため再ロック
+                    _inspectorService.SetLocked(targetInspector, true);
+                    
+                    // ローテーション順序を更新（更新したものを末尾へ）
+                    _rotationOrder.RemoveAt(0);
+                    _rotationOrder.Add(targetInspector);
+                    
+                    _isUpdating = false;
+                };
+            }
+            catch
+            {
+                _isUpdating = false;
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// 特定のInspectorを次の更新対象に設定
+        /// </summary>
+        public void SetNextTargetInspector(int index)
+        {
+            if (!_isEnabled) return;
+            SyncInspectorList();
+            
+            var inspectors = _inspectorService.GetAllInspectors();
+            if (index < 0 || index >= inspectors.Count) return;
+
+            var targetInspector = inspectors[index];
+
+            // ローテーション順序を再構築（指定Inspectorを先頭に）
+            if (_rotationOrder.Contains(targetInspector))
+            {
+                _rotationOrder.Remove(targetInspector);
+                _rotationOrder.Insert(0, targetInspector);
+            }
+        }
+
+        private void LoadSettings()
+        {
+            var settings = _persistence.Load<RotationLockSettings>(SettingsKey, null);
+            if (settings != null)
+            {
+                _isEnabled = settings.IsEnabled;
+            }
+        }
+
+        private void SaveSettings()
+        {
+            var settings = new RotationLockSettings { IsEnabled = _isEnabled };
+            _persistence.Save(SettingsKey, settings);
+        }
+
+        [System.Serializable]
+        private class RotationLockSettings
+        {
+            public bool IsEnabled;
+        }
+    }
+}
