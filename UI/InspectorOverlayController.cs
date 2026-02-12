@@ -25,7 +25,10 @@ namespace InspectorManager.UI
         
         // 定期更新の間引き用
         private double _lastUpdateTime;
-        private const double updateInterval = 0.5f; // 0.5秒おきにチェック
+        private const double updateInterval = 0.5f;
+
+        // フラッシュ中のInspectorを追跡
+        private HashSet<EditorWindow> _flashingInspectors = new HashSet<EditorWindow>();
 
         public InspectorOverlayController(
             IInspectorWindowService inspectorService, 
@@ -64,12 +67,19 @@ namespace InspectorManager.UI
                 var button = overlay.Q<Button>(LockButtonName);
                 if (button != null)
                 {
-                    // フラッシュエフェクト（緑色に点灯してから戻る）
-                    button.style.backgroundColor = new Color(0.2f, 0.8f, 0.2f, 1f);
-                    // 戻りは次回のUpdateOverlayか、scheduleで処理
+                    _flashingInspectors.Add(evt.UpdatedInspector);
+
+                    // フラッシュエフェクト（アクセントグリーン）
+                    button.style.backgroundColor = new StyleColor(
+                        new Color(0.20f, 0.78f, 0.35f, 1f)); // AccentGreen
+                    button.style.borderBottomWidth = 2;
+                    button.style.borderBottomColor = new StyleColor(
+                        new Color(0.20f, 0.78f, 0.35f, 0.8f));
+
+                    // 1.5秒後に元に戻す
                     button.schedule.Execute(() => 
                     {
-                        // UpdateOverlayで本来の色に戻ることを期待して、refresh呼び出し
+                        _flashingInspectors.Remove(evt.UpdatedInspector);
                         UpdateOverlay(evt.UpdatedInspector, -1); 
                     }).ExecuteLater(1500);
                 }
@@ -108,6 +118,7 @@ namespace InspectorManager.UI
                     element?.RemoveFromHierarchy();
                 }
                 _activeOverlays.Remove(closed);
+                _flashingInspectors.Remove(closed);
             }
 
             // 現在のInspectorに対してオーバーレイ更新
@@ -144,6 +155,9 @@ namespace InspectorManager.UI
                 _activeOverlays[inspector] = overlay;
             }
 
+            // フラッシュ中はスキップ（フラッシュの色を維持するため）
+            bool isFlashing = _flashingInspectors.Contains(inspector);
+
             // UI状態更新
             var isLocked = _inspectorService.IsLocked(inspector);
             var button = overlay.Q<Button>(LockButtonName);
@@ -155,15 +169,21 @@ namespace InspectorManager.UI
                 
                 string displayText = _localizationService.GetString("Overlay_Format", index + 1, statusText);
 
-                if (button.text != displayText)
+                button.text = displayText;
+
+                // フラッシュ中でなければ通常色を適用
+                if (!isFlashing)
                 {
-                    button.text = displayText;
-                    // 色の更新
-                    var color = isLocked 
-                        ? new Color(0.6f, 0.2f, 0.2f, 1f)
-                        : new Color(0.2f, 0.2f, 0.2f, 1f);
-                    
-                    button.style.backgroundColor = color;
+                    var bgColor = isLocked 
+                        ? new Color(0.55f, 0.20f, 0.20f, 1f)   // 落ち着いた赤
+                        : new Color(0.20f, 0.20f, 0.20f, 1f);  // ダーク
+
+                    button.style.backgroundColor = new StyleColor(bgColor);
+                    button.style.borderBottomWidth = 2;
+                    button.style.borderBottomColor = new StyleColor(
+                        isLocked 
+                            ? new Color(0.92f, 0.34f, 0.34f, 0.6f) 
+                            : new Color(0.30f, 0.30f, 0.30f, 1f));
                 }
 
                 // Nextバッジの表示制御
@@ -176,16 +196,21 @@ namespace InspectorManager.UI
                 }
                 else if (isNext)
                 {
-                    // バッジがないけどNextなら作成
-                    nextBadge = new Label("▶ Next");
+                    nextBadge = new Label("▶ NEXT");
                     nextBadge.name = NextBadgeName;
-                    nextBadge.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 1f);
-                    nextBadge.style.color = Color.white;
-                    nextBadge.style.paddingLeft = 4;
-                    nextBadge.style.paddingRight = 4;
-                    nextBadge.style.borderTopRightRadius = 3;
-                    nextBadge.style.borderBottomRightRadius = 3;
+                    nextBadge.style.backgroundColor = new StyleColor(new Color(0.26f, 0.52f, 0.96f, 1f)); // AccentBlue
+                    nextBadge.style.color = new StyleColor(Color.white);
+                    nextBadge.style.paddingLeft = 6;
+                    nextBadge.style.paddingRight = 6;
+                    nextBadge.style.paddingTop = 2;
+                    nextBadge.style.paddingBottom = 2;
+                    nextBadge.style.marginLeft = 2;
+                    nextBadge.style.borderTopRightRadius = 4;
+                    nextBadge.style.borderBottomRightRadius = 4;
+                    nextBadge.style.borderTopLeftRadius = 4;
+                    nextBadge.style.borderBottomLeftRadius = 4;
                     nextBadge.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    nextBadge.style.fontSize = 10;
                     
                     overlay.Add(nextBadge);
                 }
@@ -200,26 +225,25 @@ namespace InspectorManager.UI
                 style =
                 {
                     flexDirection = FlexDirection.Row,
-                    flexShrink = 0, // 縮まない
-                    height = 24,
-                    backgroundColor = new Color(0.15f, 0.15f, 0.15f, 1f),
+                    flexShrink = 0,
+                    height = 26,
+                    backgroundColor = new StyleColor(new Color(0.14f, 0.14f, 0.14f, 1f)),
                     borderBottomWidth = 1,
-                    borderBottomColor = new Color(0.1f, 0.1f, 0.1f, 1f),
+                    borderBottomColor = new StyleColor(new Color(0.10f, 0.10f, 0.10f, 1f)),
                     paddingTop = 2,
                     paddingBottom = 2,
                     paddingLeft = 2,
-                    paddingRight = 2
+                    paddingRight = 2,
+                    alignItems = Align.Center,
                 }
             };
 
             var button = new Button(() => 
             {
-                // クリック時処理
                 bool current = _inspectorService.IsLocked(inspector);
                 _inspectorService.SetLocked(inspector, !current);
                 inspector.Repaint();
                 
-                // インデックスを手動で計算
                 var allInspectors = _inspectorService.GetAllInspectors();
                 int idx = -1;
                 for(int i=0; i < allInspectors.Count; i++)
@@ -242,7 +266,16 @@ namespace InspectorManager.UI
                 {
                     flexGrow = 1,
                     unityFontStyleAndWeight = FontStyle.Bold,
-                    color = Color.white
+                    color = new StyleColor(new Color(0.90f, 0.90f, 0.90f, 1f)),
+                    fontSize = 11,
+                    borderTopLeftRadius = 3,
+                    borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3,
+                    borderBottomRightRadius = 3,
+                    marginLeft = 1,
+                    marginRight = 1,
+                    paddingLeft = 8,
+                    paddingRight = 8,
                 }
             };
 
@@ -260,6 +293,7 @@ namespace InspectorManager.UI
                 }
             }
             _activeOverlays.Clear();
+            _flashingInspectors.Clear();
             
             // 念のため全Inspectorから検索して削除
             var inspectors = _inspectorService.GetAllInspectors();

@@ -20,6 +20,7 @@
     "Settings_RecordAssets": "Record Assets",
     "Settings_AutoClean": "Auto Clean Invalid Entries",
     "Settings_BlockFolder": "Block Folder Selection",
+    "Settings_Rotation": "Rotation Settings",
     "Settings_AutoFocus": "Auto Focus Inspector on Update",
     "Header_Shortcuts": "Shortcuts",
     "Shortcut_Help": "Ctrl+L: Toggle Active Inspector Lock\nCtrl+Shift+L: Toggle All Inspector Locks",
@@ -53,5 +54,7 @@
     "Button_UnlockAll": "Unlock All",
     "Button_Focus": "Focus",
     "Confirm_ClearHistory": "Are you sure you want to clear all selection history?",
-    "Button_Clear": "Clear"
+    "Button_Clear": "Clear",
+    "Toast_FavoriteAdded": "Added to Favorites",
+    "Toast_FavoriteRemoved": "Removed from Favorites"
 }

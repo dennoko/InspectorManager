@@ -27,32 +27,45 @@ namespace InspectorManager.UI
             // ツールバー
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             {
+                GUILayout.Space(4);
                 GUILayout.Label(_localizationService.GetString("Header_Favorites"), EditorStyles.toolbarButton);
                 GUILayout.FlexibleSpace();
 
+                // エントリ数バッジ
+                var favorites = _favoritesService.GetFavorites();
+                GUILayout.Label($"{favorites.Count}", Styles.HeaderBadge);
+                GUILayout.Space(4);
+
                 // クリーンアップボタン
-                if (GUILayout.Button(Styles.RefreshIcon, EditorStyles.toolbarButton, GUILayout.Width(24)))
+                if (GUILayout.Button(Styles.RefreshIcon, EditorStyles.toolbarButton, GUILayout.Width(28)))
                 {
                     _favoritesService.CleanupInvalidEntries();
                 }
+
+                GUILayout.Space(4);
             }
             EditorGUILayout.EndHorizontal();
 
-            var favorites = _favoritesService.GetFavorites();
+            var favList = _favoritesService.GetFavorites();
 
-            if (favorites.Count == 0)
+            if (favList.Count == 0)
             {
+                EditorGUILayout.Space(8);
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(12);
                 EditorGUILayout.HelpBox(
                     _localizationService.GetString("Favorites_Empty") + "\n" + _localizationService.GetString("Favorites_AddHint"),
                     MessageType.Info);
+                GUILayout.Space(12);
+                EditorGUILayout.EndHorizontal();
                 return;
             }
 
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
             {
-                for (int i = 0; i < favorites.Count; i++)
+                for (int i = 0; i < favList.Count; i++)
                 {
-                    DrawFavoriteEntry(favorites[i], i);
+                    DrawFavoriteEntry(favList[i], i);
                 }
             }
             EditorGUILayout.EndScrollView();
@@ -66,9 +79,18 @@ namespace InspectorManager.UI
 
         private void DrawFavoriteEntry(FavoriteEntry entry, int index)
         {
+            var bgColor = index % 2 == 0 ? Styles.Colors.RowEven : Styles.Colors.RowOdd;
             var rect = EditorGUILayout.BeginHorizontal(Styles.ListItem);
             {
-                // 削除ボタン
+                EditorGUI.DrawRect(rect, bgColor);
+
+                // 星アイコン左バー
+                var barRect = new Rect(rect.x, rect.y + 2, 3, rect.height - 4);
+                EditorGUI.DrawRect(barRect, Styles.Colors.WarningOrange);
+
+                GUILayout.Space(6);
+
+                // 削除ボタン（星アイコン）
                 if (GUILayout.Button(Styles.FavoriteIcon, Styles.IconButton))
                 {
                     var obj = entry.GetObject();
@@ -103,7 +125,11 @@ namespace InspectorManager.UI
                 GUILayout.FlexibleSpace();
 
                 // 型名
-                GUILayout.Label(entry.ObjectType, EditorStyles.miniLabel, GUILayout.Width(80));
+                var typeStyle = new GUIStyle(EditorStyles.miniLabel);
+                typeStyle.normal.textColor = Styles.Colors.TextSecondary;
+                GUILayout.Label(entry.ObjectType, typeStyle, GUILayout.Width(80));
+
+                GUILayout.Space(4);
             }
             EditorGUILayout.EndHorizontal();
         }

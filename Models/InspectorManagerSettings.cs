@@ -16,7 +16,7 @@ namespace InspectorManager.Models
         [SerializeField] private bool _autoCleanInvalidHistory = true;
         [SerializeField] private bool _blockFolderSelection = true;
         [SerializeField] private string _language = "ja";
-        [SerializeField] private bool _autoFocusOnUpdate = false;
+        [SerializeField] private bool _autoFocusOnUpdate = true;
 
         /// <summary>
         /// 言語設定 ("ja" or "en")
@@ -104,7 +104,7 @@ namespace InspectorManager.Models
                 _autoCleanInvalidHistory = true,
                 _blockFolderSelection = true,
                 _language = "ja",
-                _autoFocusOnUpdate = false
+                _autoFocusOnUpdate = true
             };
         }
 

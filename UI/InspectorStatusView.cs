@@ -18,7 +18,7 @@ namespace InspectorManager.UI
         // ハイライト用
         private EditorWindow _highlightedInspector;
         private double _highlightEndTime;
-        private const double HighlightDuration = 1.0;
+        private const double HighlightDuration = 1.2;
 
         public InspectorStatusView(
             IInspectorWindowService inspectorService,
@@ -50,11 +50,16 @@ namespace InspectorManager.UI
 
             if (inspectors.Count == 0)
             {
+                EditorGUILayout.Space(8);
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(12);
                 EditorGUILayout.HelpBox(_localizationService.GetString("Status_NoInspectors"), MessageType.Info);
+                GUILayout.Space(12);
+                EditorGUILayout.EndHorizontal();
                 return;
             }
 
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.MaxHeight(150));
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.MaxHeight(200));
 
             for (int i = 0; i < inspectors.Count; i++)
             {
@@ -63,23 +68,24 @@ namespace InspectorManager.UI
 
             EditorGUILayout.EndScrollView();
 
-            EditorGUILayout.Space(4);
+            EditorGUILayout.Space(6);
 
             // 一括操作ボタン
             EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(12);
             {
-                // LocalizationServiceがnullの場合の対策（古いコードとの互換性など）
                 var lockAllText = _localizationService?.GetString("Button_LockAll") ?? "Lock All";
-                if (GUILayout.Button(lockAllText, Styles.MiniButton))
+                if (GUILayout.Button(lockAllText, Styles.ActionButton))
                 {
                     _inspectorService.LockAll();
                 }
                 var unlockAllText = _localizationService?.GetString("Button_UnlockAll") ?? "Unlock All";
-                if (GUILayout.Button(unlockAllText, Styles.MiniButton))
+                if (GUILayout.Button(unlockAllText, Styles.ActionButton))
                 {
                     _inspectorService.UnlockAll();
                 }
             }
+            GUILayout.Space(12);
             EditorGUILayout.EndHorizontal();
         }
 
@@ -87,32 +93,49 @@ namespace InspectorManager.UI
         {
             var isLocked = _inspectorService.IsLocked(inspector);
             var inspectedObject = _inspectorService.GetInspectedObject(inspector);
-            
-            // 除外状態
             var isExcluded = _rotationLockController != null && _rotationLockController.IsExcluded(inspector);
-            
+
             // ハイライト判定
             bool isHighlighted = inspector == _highlightedInspector && EditorApplication.timeSinceStartup < _highlightEndTime;
 
-            // 背景色 (除外時は少し暗くするなど)
-            var baseColor = isExcluded 
-                ? new Color(0.25f, 0.25f, 0.25f, 1f) // Dark Gray for Excluded
-                : (isLocked ? Styles.Colors.LockedBackground : Styles.Colors.UnlockedBackground);
-
+            // 背景色の計算
+            Color bgColor;
             if (isHighlighted)
             {
-                // ハイライト時は緑色を強く
-                baseColor = Color.Lerp(baseColor, new Color(0.2f, 0.9f, 0.2f, 0.5f), 0.7f);
+                // フラッシュアニメーション（徐々にフェードアウト）
+                float remaining = (float)(_highlightEndTime - EditorApplication.timeSinceStartup);
+                float t = Mathf.Clamp01(remaining / (float)HighlightDuration);
+                bgColor = Color.Lerp(
+                    index % 2 == 0 ? Styles.Colors.RowEven : Styles.Colors.RowOdd,
+                    Styles.Colors.FlashHighlight,
+                    t * 0.8f);
             }
-
-            var bgColor = baseColor;
+            else if (isExcluded)
+            {
+                bgColor = new Color(0.18f, 0.18f, 0.18f, 1f); // より暗い背景
+            }
+            else
+            {
+                bgColor = index % 2 == 0 ? Styles.Colors.RowEven : Styles.Colors.RowOdd;
+            }
 
             var rect = EditorGUILayout.BeginHorizontal(Styles.ListItem);
             {
+                // 行背景の描画
                 EditorGUI.DrawRect(rect, bgColor);
 
-                // ロックアイコン＆トグル (除外時は操作不可にするか、アイコンを変えるか)
-                // 除外時はロック固定なので、ロックアイコンを表示しつつ、disabledにするのが親切かも
+                // ── ロック状態左バー ──
+                var barRect = new Rect(rect.x, rect.y + 2, 3, rect.height - 4);
+                if (isExcluded)
+                    EditorGUI.DrawRect(barRect, Styles.Colors.TextMuted);
+                else if (isLocked)
+                    EditorGUI.DrawRect(barRect, Styles.Colors.DangerRed);
+                else
+                    EditorGUI.DrawRect(barRect, Styles.Colors.AccentGreen);
+
+                GUILayout.Space(6);
+
+                // ── ロックアイコン＆トグル ──
                 using (new EditorGUI.DisabledScope(isExcluded))
                 {
                     var lockIcon = isLocked ? Styles.LockIcon : Styles.UnlockIcon;
@@ -122,67 +145,77 @@ namespace InspectorManager.UI
                     }
                 }
 
-                // Inspector名
+                // ── Inspector名 ──
                 var nameLabel = $"Inspector {index + 1}";
-                if (isExcluded)
-                {
-                     nameLabel += $" ({_localizationService?.GetString("Status_Excluded") ?? "Ex"})";
-                }
-                GUILayout.Label(nameLabel, GUILayout.Width(100));
+                GUILayout.Label(nameLabel, GUILayout.Width(80));
 
-                // Rotation Order Badge (if rotation is enabled)
-                if (_rotationLockController != null && _rotationLockController.IsEnabled && !isExcluded)
+                // ── ローテーションバッジ ──
+                if (_rotationLockController != null && _rotationLockController.IsEnabled)
                 {
-                    int rotationIndex = _rotationLockController.GetRotationOrderIndex(inspector);
-                    if (rotationIndex >= 0)
+                    if (isExcluded)
                     {
-                        var badgeContent = rotationIndex == 0 ? "NEXT" : (rotationIndex).ToString(); // 0 is Next, 1 is 2nd... or just 1, 2, 3? "Wait 1", "Wait 2"?
-                        // Use "NEXT" for 0, and numbers for queue
-                        
-                        var badgeStyle = new GUIStyle(EditorStyles.miniLabel);
-                        badgeStyle.normal.textColor = Color.white;
-                        badgeStyle.alignment = TextAnchor.MiddleCenter;
-                        badgeStyle.fixedWidth = rotationIndex == 0 ? 36 : 20;
-
-                        var badgeColor = rotationIndex == 0 
-                            ? new Color(0.2f, 0.6f, 1f, 1f) // Blue for Next
-                            : new Color(0.4f, 0.4f, 0.4f, 1f); // Gray for others
-                        
-                        var badgeRect = GUILayoutUtility.GetRect(new GUIContent(badgeContent), badgeStyle);
-                        var originalColor = GUI.backgroundColor;
-                        GUI.backgroundColor = badgeColor;
-                        GUI.Box(badgeRect, badgeContent, EditorStyles.helpBox); // Use helpBox style for background
-                        GUI.backgroundColor = originalColor;
+                        // 除外バッジ
+                        var excText = _localizationService?.GetString("Status_Excluded") ?? "Ex";
+                        GUILayout.Label(excText, Styles.BadgeExcluded);
+                    }
+                    else
+                    {
+                        int rotationIndex = _rotationLockController.GetRotationOrderIndex(inspector);
+                        if (rotationIndex >= 0)
+                        {
+                            if (rotationIndex == 0)
+                            {
+                                GUILayout.Label("NEXT", Styles.BadgeNext);
+                            }
+                            else
+                            {
+                                GUILayout.Label($"#{rotationIndex + 1}", Styles.BadgeOrder);
+                            }
+                        }
                     }
                 }
 
-                // 表示中のオブジェクト名
-                var objectName = inspectedObject != null ? inspectedObject.name : (_localizationService?.GetString("Status_NoObject") ?? "(None)");
-                GUILayout.Label(objectName, EditorStyles.label);
+                // ── 表示中のオブジェクト名 ──
+                GUILayout.Space(4);
+                var objectName = inspectedObject != null 
+                    ? inspectedObject.name 
+                    : (_localizationService?.GetString("Status_NoObject") ?? "(None)");
+                
+                using (new EditorGUI.DisabledScope(isExcluded))
+                {
+                    GUILayout.Label(objectName, EditorStyles.label);
+                }
 
                 GUILayout.FlexibleSpace();
 
-                // 除外/追加ボタン
-                if (_rotationLockController != null && _localizationService != null)
+                // ── 除外/追加ボタン ──
+                if (_rotationLockController != null && _localizationService != null && _rotationLockController.IsEnabled)
                 {
-                    var btnIcon = isExcluded ? "Add" : "Excl"; // icon or text
+                    var btnText = isExcluded 
+                        ? "＋" 
+                        : "－";
                     var btnTooltip = isExcluded 
                         ? _localizationService.GetString("Tooltip_Include")
                         : _localizationService.GetString("Tooltip_Exclude");
                     
-                    var btnContent = new GUIContent(btnIcon, btnTooltip);
+                    var btnContent = new GUIContent(btnText, btnTooltip);
 
-                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(64)))
+                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(24)))
                     {
                         _rotationLockController.SetExcluded(inspector, !isExcluded);
                     }
                 }
 
-                // フォーカスボタン
-                if (GUILayout.Button(_localizationService?.GetString("Button_Focus") ?? "Focus", Styles.MiniButton, GUILayout.Width(40)))
+                // ── フォーカスボタン ──
+                var focusContent = new GUIContent(
+                    _localizationService?.GetString("Button_Focus") ?? "Focus",
+                    "Focus this Inspector window");
+                if (GUILayout.Button(focusContent, Styles.MiniButton, GUILayout.Width(44)))
                 {
                     inspector.Focus();
                 }
+
+                GUILayout.Space(4);
             }
             EditorGUILayout.EndHorizontal();
         }

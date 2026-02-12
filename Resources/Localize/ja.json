@@ -20,6 +20,7 @@
     "Settings_RecordAssets": "アセットを記録",
     "Settings_AutoClean": "無効なエントリを自動削除",
     "Settings_BlockFolder": "フォルダ選択時の更新をブロック",
+    "Settings_Rotation": "ローテーション設定",
     "Settings_AutoFocus": "更新時にInspectorをフォーカス",
     "Header_Shortcuts": "ショートカット",
     "Shortcut_Help": "Ctrl+L: アクティブInspectorのロック切り替え\nCtrl+Shift+L: 全Inspectorのロック一括切り替え",
@@ -53,5 +54,7 @@
     "Button_UnlockAll": "全てアンロック",
     "Button_Focus": "表示",
     "Confirm_ClearHistory": "選択履歴をすべて削除しますか？",
-    "Button_Clear": "クリア"
+    "Button_Clear": "クリア",
+    "Toast_FavoriteAdded": "お気に入りに追加しました",
+    "Toast_FavoriteRemoved": "お気に入りから削除しました"
 }
