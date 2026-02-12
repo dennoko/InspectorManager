@@ -124,10 +124,8 @@ namespace InspectorManager.UI
 
                 GUILayout.FlexibleSpace();
 
-                // 型名
-                var typeStyle = new GUIStyle(EditorStyles.miniLabel);
-                typeStyle.normal.textColor = Styles.Colors.TextSecondary;
-                GUILayout.Label(entry.ObjectType, typeStyle, GUILayout.Width(80));
+                // 型名（キャッシュ済みスタイル使用）
+                GUILayout.Label(entry.ObjectType, Styles.TypeLabel, GUILayout.Width(80));
 
                 GUILayout.Space(4);
             }

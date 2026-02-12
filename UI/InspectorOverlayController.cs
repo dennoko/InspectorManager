@@ -14,21 +14,17 @@ namespace InspectorManager.UI
     public class InspectorOverlayController : IDisposable
     {
         private readonly IInspectorWindowService _inspectorService;
-        private readonly Services.ILocalizationService _localizationService;
+        private readonly ILocalizationService _localizationService;
         private readonly Controllers.RotationLockController _rotationLockController;
-        private const string OverlayName = "InspectorManagerOverlay";
-        private const string LockButtonName = "InspectorManagerLockButton";
         private const string NextBadgeName = "InspectorManagerNextBadge";
+        private const long FlashDurationMs = 1500;
         
-        // 処理済みInspectorと追加したエレメントの追跡
-        private Dictionary<EditorWindow, VisualElement> _activeOverlays = new Dictionary<EditorWindow, VisualElement>();
+        private readonly Dictionary<EditorWindow, VisualElement> _activeOverlays = new Dictionary<EditorWindow, VisualElement>();
         
-        // 定期更新の間引き用
         private double _lastUpdateTime;
-        private const double updateInterval = 0.5f;
+        private const double UpdateInterval = 0.5;
 
-        // フラッシュ中のInspectorを追跡
-        private HashSet<EditorWindow> _flashingInspectors = new HashSet<EditorWindow>();
+        private readonly HashSet<EditorWindow> _flashingInspectors = new HashSet<EditorWindow>();
 
         public InspectorOverlayController(
             IInspectorWindowService inspectorService, 
@@ -61,37 +57,30 @@ namespace InspectorManager.UI
 
         private void OnRotationUpdateCompleted(Core.RotationUpdateCompletedEvent evt)
         {
-            // 更新されたInspectorのオーバーレイをフラッシュ
-            if (_activeOverlays.TryGetValue(evt.UpdatedInspector, out var overlay))
+            if (!_activeOverlays.TryGetValue(evt.UpdatedInspector, out var overlay)) return;
+
+            var button = overlay.Q<Button>(OverlayElementFactory.LockButtonName);
+            if (button == null) return;
+
+            _flashingInspectors.Add(evt.UpdatedInspector);
+
+            // フラッシュエフェクト
+            button.style.backgroundColor = new StyleColor(new Color(0.20f, 0.78f, 0.35f, 1f));
+            button.style.borderBottomWidth = 2;
+            button.style.borderBottomColor = new StyleColor(new Color(0.20f, 0.78f, 0.35f, 0.8f));
+
+            button.schedule.Execute(() => 
             {
-                var button = overlay.Q<Button>(LockButtonName);
-                if (button != null)
-                {
-                    _flashingInspectors.Add(evt.UpdatedInspector);
+                _flashingInspectors.Remove(evt.UpdatedInspector);
+                UpdateOverlay(evt.UpdatedInspector, -1); 
+            }).ExecuteLater(FlashDurationMs);
 
-                    // フラッシュエフェクト（アクセントグリーン）
-                    button.style.backgroundColor = new StyleColor(
-                        new Color(0.20f, 0.78f, 0.35f, 1f)); // AccentGreen
-                    button.style.borderBottomWidth = 2;
-                    button.style.borderBottomColor = new StyleColor(
-                        new Color(0.20f, 0.78f, 0.35f, 0.8f));
-
-                    // 1.5秒後に元に戻す
-                    button.schedule.Execute(() => 
-                    {
-                        _flashingInspectors.Remove(evt.UpdatedInspector);
-                        UpdateOverlay(evt.UpdatedInspector, -1); 
-                    }).ExecuteLater(1500);
-                }
-            }
-
-            // 全オーバーレイの状態（Nextバッジなど）を更新
             RefreshOverlays();
         }
 
         private void OnUpdate()
         {
-            if (EditorApplication.timeSinceStartup - _lastUpdateTime < updateInterval) return;
+            if (EditorApplication.timeSinceStartup - _lastUpdateTime < UpdateInterval) return;
             _lastUpdateTime = EditorApplication.timeSinceStartup;
 
             RefreshOverlays();
@@ -101,7 +90,7 @@ namespace InspectorManager.UI
         {
             var inspectors = _inspectorService.GetAllInspectors();
             
-            // 削除されたInspectorのクリーンアップ
+            // 閉じられたInspectorのクリーンアップ
             var closedInspectors = new List<EditorWindow>();
             foreach (var kvp in _activeOverlays)
             {
@@ -121,7 +110,6 @@ namespace InspectorManager.UI
                 _flashingInspectors.Remove(closed);
             }
 
-            // 現在のInspectorに対してオーバーレイ更新
             for (int i = 0; i < inspectors.Count; i++)
             {
                 UpdateOverlay(inspectors[i], i);
@@ -134,177 +122,104 @@ namespace InspectorManager.UI
             var root = inspector.rootVisualElement;
             if (root == null) return;
 
-            // 既存オーバーレイを確認
-            VisualElement overlay = null;
-            if (_activeOverlays.TryGetValue(inspector, out var cachedOverlay))
+            // 既存オーバーレイを確認・作成
+            if (!_activeOverlays.TryGetValue(inspector, out var overlay))
             {
-                overlay = cachedOverlay;
-                if (overlay.parent == null)
-                {
-                    root.Insert(0, overlay);
-                }
-            }
-            else
-            {
-                overlay = root.Q(OverlayName);
+                overlay = root.Q(OverlayElementFactory.OverlayName);
                 if (overlay == null)
                 {
-                    overlay = CreateOverlayElement(inspector);
+                    overlay = OverlayElementFactory.Create(inspector, _inspectorService, OnLockToggled);
                     root.Insert(0, overlay);
                 }
                 _activeOverlays[inspector] = overlay;
             }
-
-            // フラッシュ中はスキップ（フラッシュの色を維持するため）
-            bool isFlashing = _flashingInspectors.Contains(inspector);
-
-            // UI状態更新
-            var isLocked = _inspectorService.IsLocked(inspector);
-            var button = overlay.Q<Button>(LockButtonName);
-            if (button != null)
+            else if (overlay.parent == null)
             {
-                string statusText = isLocked 
-                    ? _localizationService.GetString("Overlay_Locked") 
-                    : _localizationService.GetString("Overlay_Unlocked");
-                
-                string displayText = _localizationService.GetString("Overlay_Format", index + 1, statusText);
+                root.Insert(0, overlay);
+            }
 
-                button.text = displayText;
+            bool isFlashing = _flashingInspectors.Contains(inspector);
+            var isLocked = _inspectorService.IsLocked(inspector);
+            var button = overlay.Q<Button>(OverlayElementFactory.LockButtonName);
+            if (button == null) return;
 
-                // フラッシュ中でなければ通常色を適用
-                if (!isFlashing)
+            // テキスト更新
+            string statusText = isLocked 
+                ? _localizationService.GetString("Overlay_Locked") 
+                : _localizationService.GetString("Overlay_Unlocked");
+            button.text = _localizationService.GetString("Overlay_Format", index + 1, statusText);
+
+            // フラッシュ中でなければ通常色を適用
+            if (!isFlashing)
+            {
+                var bgColor = isLocked 
+                    ? new Color(0.55f, 0.20f, 0.20f, 1f)
+                    : new Color(0.20f, 0.20f, 0.20f, 1f);
+
+                button.style.backgroundColor = new StyleColor(bgColor);
+                button.style.borderBottomWidth = 2;
+                button.style.borderBottomColor = new StyleColor(
+                    isLocked 
+                        ? new Color(0.92f, 0.34f, 0.34f, 0.6f) 
+                        : new Color(0.30f, 0.30f, 0.30f, 1f));
+            }
+
+            // Nextバッジ
+            UpdateNextBadge(overlay, inspector);
+        }
+
+        private void OnLockToggled(EditorWindow inspector)
+        {
+            var allInspectors = _inspectorService.GetAllInspectors();
+            for (int i = 0; i < allInspectors.Count; i++)
+            {
+                if (allInspectors[i] == inspector)
                 {
-                    var bgColor = isLocked 
-                        ? new Color(0.55f, 0.20f, 0.20f, 1f)   // 落ち着いた赤
-                        : new Color(0.20f, 0.20f, 0.20f, 1f);  // ダーク
-
-                    button.style.backgroundColor = new StyleColor(bgColor);
-                    button.style.borderBottomWidth = 2;
-                    button.style.borderBottomColor = new StyleColor(
-                        isLocked 
-                            ? new Color(0.92f, 0.34f, 0.34f, 0.6f) 
-                            : new Color(0.30f, 0.30f, 0.30f, 1f));
-                }
-
-                // Nextバッジの表示制御
-                var nextBadge = overlay.Q<Label>(NextBadgeName);
-                bool isNext = _rotationLockController != null && _rotationLockController.IsNextTarget(inspector);
-                
-                if (nextBadge != null)
-                {
-                    nextBadge.style.display = isNext ? DisplayStyle.Flex : DisplayStyle.None;
-                }
-                else if (isNext)
-                {
-                    nextBadge = new Label("▶ NEXT");
-                    nextBadge.name = NextBadgeName;
-                    nextBadge.style.backgroundColor = new StyleColor(new Color(0.26f, 0.52f, 0.96f, 1f)); // AccentBlue
-                    nextBadge.style.color = new StyleColor(Color.white);
-                    nextBadge.style.paddingLeft = 6;
-                    nextBadge.style.paddingRight = 6;
-                    nextBadge.style.paddingTop = 2;
-                    nextBadge.style.paddingBottom = 2;
-                    nextBadge.style.marginLeft = 2;
-                    nextBadge.style.borderTopRightRadius = 4;
-                    nextBadge.style.borderBottomRightRadius = 4;
-                    nextBadge.style.borderTopLeftRadius = 4;
-                    nextBadge.style.borderBottomLeftRadius = 4;
-                    nextBadge.style.unityFontStyleAndWeight = FontStyle.Bold;
-                    nextBadge.style.fontSize = 10;
-                    
-                    overlay.Add(nextBadge);
+                    UpdateOverlay(inspector, i);
+                    break;
                 }
             }
         }
 
-        private VisualElement CreateOverlayElement(EditorWindow inspector)
+        private void UpdateNextBadge(VisualElement overlay, EditorWindow inspector)
         {
-            var overlay = new VisualElement
+            var nextBadge = overlay.Q<Label>(NextBadgeName);
+            bool isNext = _rotationLockController != null && _rotationLockController.IsNextTarget(inspector);
+            
+            if (nextBadge != null)
             {
-                name = OverlayName,
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    flexShrink = 0,
-                    height = 26,
-                    backgroundColor = new StyleColor(new Color(0.14f, 0.14f, 0.14f, 1f)),
-                    borderBottomWidth = 1,
-                    borderBottomColor = new StyleColor(new Color(0.10f, 0.10f, 0.10f, 1f)),
-                    paddingTop = 2,
-                    paddingBottom = 2,
-                    paddingLeft = 2,
-                    paddingRight = 2,
-                    alignItems = Align.Center,
-                }
-            };
-
-            var button = new Button(() => 
+                nextBadge.style.display = isNext ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+            else if (isNext)
             {
-                bool current = _inspectorService.IsLocked(inspector);
-                _inspectorService.SetLocked(inspector, !current);
-                inspector.Repaint();
-                
-                var allInspectors = _inspectorService.GetAllInspectors();
-                int idx = -1;
-                for(int i=0; i < allInspectors.Count; i++)
-                {
-                    if (allInspectors[i] == inspector)
-                    {
-                        idx = i;
-                        break;
-                    }
-                }
-                
-                if (idx >= 0)
-                {
-                    UpdateOverlay(inspector, idx);
-                }
-            })
-            {
-                name = LockButtonName,
-                style =
-                {
-                    flexGrow = 1,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    color = new StyleColor(new Color(0.90f, 0.90f, 0.90f, 1f)),
-                    fontSize = 11,
-                    borderTopLeftRadius = 3,
-                    borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3,
-                    borderBottomRightRadius = 3,
-                    marginLeft = 1,
-                    marginRight = 1,
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                }
-            };
-
-            overlay.Add(button);
-            return overlay;
+                nextBadge = OverlayElementFactory.CreateNextBadge("▶ NEXT");
+                nextBadge.name = NextBadgeName;
+                overlay.Add(nextBadge);
+            }
         }
 
         private void RemoveAllOverlays()
         {
             foreach (var kvp in _activeOverlays)
             {
-                if (kvp.Value != null)
-                {
-                    kvp.Value.RemoveFromHierarchy();
-                }
+                kvp.Value?.RemoveFromHierarchy();
             }
             _activeOverlays.Clear();
             _flashingInspectors.Clear();
             
             // 念のため全Inspectorから検索して削除
-            var inspectors = _inspectorService.GetAllInspectors();
-            foreach(var ins in inspectors)
+            try
             {
-                var root = ins.rootVisualElement;
-                if(root != null)
+                var inspectors = _inspectorService.GetAllInspectors();
+                foreach (var ins in inspectors)
                 {
-                    var overlay = root.Q(OverlayName);
-                    overlay?.RemoveFromHierarchy();
+                    var root = ins?.rootVisualElement;
+                    root?.Q(OverlayElementFactory.OverlayName)?.RemoveFromHierarchy();
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[InspectorManager] Overlay cleanup warning: {ex.Message}");
             }
         }
     }
