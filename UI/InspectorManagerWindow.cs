@@ -55,6 +55,7 @@ namespace InspectorManager.UI
             EventBus.Instance.Subscribe<FavoritesUpdatedEvent>(OnFavoritesUpdated);
             EventBus.Instance.Subscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Subscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
+            EventBus.Instance.Subscribe<RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
             
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged += Repaint;
@@ -67,18 +68,32 @@ namespace InspectorManager.UI
             EventBus.Instance.Unsubscribe<FavoritesUpdatedEvent>(OnFavoritesUpdated);
             EventBus.Instance.Unsubscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Unsubscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
+            EventBus.Instance.Unsubscribe<RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
             
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged -= Repaint;
 
+            // コントローラーの確実な破棄
+            _rotationLockController?.Dispose();
+            _rotationLockController = null;
+
+            _historyController?.Dispose();
+            _historyController = null;
+
             // オーバーレイコントローラの破棄
             _overlayController?.Dispose();
             _overlayController = null;
+
+            _isInitialized = false;
         }
 
         private void Initialize()
         {
             if (_isInitialized) return;
+
+            // 既存サービスが残っていれば先にクリア（ドメインリロード後の二重登録防止）
+            ServiceLocator.Instance.Clear();
+            EventBus.Instance.Clear();
 
             // サービスの初期化と登録
             _persistenceService = new EditorPrefsPersistence();
@@ -115,6 +130,7 @@ namespace InspectorManager.UI
             if (_settings != null)
             {
                 _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
+                _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
             }
             _historyController = new HistoryController(_historyService, _favoritesService, _settings);
 
@@ -123,12 +139,16 @@ namespace InspectorManager.UI
                 _inspectorService, 
                 _rotationLockController,
                 _localizationService);
-            _historyListView = new HistoryListView(_historyService, _favoritesService);
-            _favoritesListView = new FavoritesListView(_favoritesService);
+            _historyListView = new HistoryListView(_historyService, _favoritesService, _localizationService);
+            _favoritesListView = new FavoritesListView(_favoritesService, _localizationService);
 
             // オーバーレイ初期化（既存があれば破棄してから）
             _overlayController?.Dispose();
-            _overlayController = new InspectorOverlayController(_inspectorService, _localizationService);
+            _overlayController?.Dispose();
+            _overlayController = new InspectorOverlayController(
+                _inspectorService, 
+                _localizationService,
+                _rotationLockController);
 
             _isInitialized = true;
         }
@@ -289,6 +309,18 @@ namespace InspectorManager.UI
                 }
             }
 
+            bool newAutoFocus = EditorGUILayout.Toggle(
+                _localizationService.GetString("Settings_AutoFocus"), _settings.AutoFocusOnUpdate);
+            
+            if (newAutoFocus != _settings.AutoFocusOnUpdate)
+            {
+                _settings.AutoFocusOnUpdate = newAutoFocus;
+                if (_rotationLockController != null)
+                {
+                    _rotationLockController.AutoFocusOnUpdate = newAutoFocus;
+                }
+            }
+
             EditorGUILayout.Space(8);
 
             // ショートカット情報
@@ -366,6 +398,13 @@ namespace InspectorManager.UI
         private void OnHistoryUpdated(HistoryUpdatedEvent evt) => Repaint();
         private void OnFavoritesUpdated(FavoritesUpdatedEvent evt) => Repaint();
         private void OnInspectorLockChanged(InspectorLockChangedEvent evt) => Repaint();
+
         private void OnRotationLockStateChanged(RotationLockStateChangedEvent evt) => Repaint();
+        
+        private void OnRotationUpdateCompleted(RotationUpdateCompletedEvent evt)
+        {
+            _inspectorStatusView?.Flash(evt.UpdatedInspector);
+            Repaint();
+        }
     }
 }

@@ -12,12 +12,14 @@ namespace InspectorManager.UI
     public class FavoritesListView
     {
         private readonly IFavoritesService _favoritesService;
+        private readonly ILocalizationService _localizationService;
         private Vector2 _scrollPosition;
         private int _dragFromIndex = -1;
 
-        public FavoritesListView(IFavoritesService favoritesService)
+        public FavoritesListView(IFavoritesService favoritesService, ILocalizationService localizationService)
         {
             _favoritesService = favoritesService;
+            _localizationService = localizationService;
         }
 
         public void Draw()
@@ -25,7 +27,7 @@ namespace InspectorManager.UI
             // ツールバー
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
             {
-                GUILayout.Label("お気に入り", EditorStyles.toolbarButton);
+                GUILayout.Label(_localizationService.GetString("Header_Favorites"), EditorStyles.toolbarButton);
                 GUILayout.FlexibleSpace();
 
                 // クリーンアップボタン
@@ -41,7 +43,7 @@ namespace InspectorManager.UI
             if (favorites.Count == 0)
             {
                 EditorGUILayout.HelpBox(
-                    "お気に入りがありません。\n履歴から☆アイコンをクリックして追加できます。",
+                    _localizationService.GetString("Favorites_Empty") + "\n" + _localizationService.GetString("Favorites_AddHint"),
                     MessageType.Info);
                 return;
             }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using InspectorManager.Core;
@@ -11,7 +12,7 @@ namespace InspectorManager.Controllers
     /// ローテーションロック機能の制御
     /// 常時全Inspectorをロックし、Selection変更時のみ対象Inspectorを一瞬アンロックして更新させる方式。
     /// </summary>
-    public class RotationLockController
+    public class RotationLockController : IDisposable
     {
         private readonly Services.IInspectorWindowService _inspectorService;
         private readonly Services.IPersistenceService _persistence;
@@ -25,7 +26,12 @@ namespace InspectorManager.Controllers
         private bool _isUpdating;
         
         // 最後に認識した選択（無限ループ防止）
-        private Object _lastKnownSelection;
+        private UnityEngine.Object _lastKnownSelection;
+
+        // delayCallタイムアウト管理
+        private double _updateStartTime;
+        private const double UpdateTimeout = 1.0; // 1秒でタイムアウト
+        private bool _disposed;
 
         private const string SettingsKey = "RotationLockSettings";
 
@@ -53,6 +59,19 @@ namespace InspectorManager.Controllers
                     EventBus.Instance.Publish(new RotationLockStateChangedEvent { IsEnabled = _isEnabled });
                 }
             }
+        }
+        
+        public bool AutoFocusOnUpdate { get; set; }
+
+        public bool IsNextTarget(EditorWindow inspector)
+        {
+            if (_rotationOrder.Count == 0) return false;
+            return _rotationOrder[0] == inspector;
+        }
+
+        public int GetRotationOrderIndex(EditorWindow inspector)
+        {
+            return _rotationOrder.IndexOf(inspector);
         }
 
         // 現在の更新対象（次に更新されるInspector）のインデックス
@@ -88,9 +107,15 @@ namespace InspectorManager.Controllers
             Selection.selectionChanged += OnSelectionChanged;
         }
 
-        ~RotationLockController()
+        public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+
             Selection.selectionChanged -= OnSelectionChanged;
+            _rotationOrder.Clear();
+            _excludedWindows.Clear();
+            _isUpdating = false;
         }
 
         public void InitializeRotation()
@@ -178,6 +203,13 @@ namespace InspectorManager.Controllers
                 }
             }
 
+            // タイムアウトチェック: _isUpdatingが長時間trueのままならリセット
+            if (_isUpdating && (EditorApplication.timeSinceStartup - _updateStartTime) > UpdateTimeout)
+            {
+                Debug.LogWarning("[InspectorManager] Rotation update timed out, resetting state.");
+                _isUpdating = false;
+            }
+
             // 何らかの理由でアンロックされているものがあればロック（除外されているものは関知しない）
             foreach (var inspector in currentInspectors)
             {
@@ -239,40 +271,72 @@ namespace InspectorManager.Controllers
 
         /// <summary>
         /// 選択変更時のローテーション更新処理
+        /// 新方式: InspectorReflection.SetInspectedObject で同期的に更新
+        /// フォールバック: 旧方式（アンロック→delayCall→再ロック）
         /// </summary>
-        private void PerformRotationUpdate(Object newSelection)
+        private void PerformRotationUpdate(UnityEngine.Object newSelection)
         {
             if (_rotationOrder.Count == 0) return;
 
             _isUpdating = true;
+            _updateStartTime = EditorApplication.timeSinceStartup;
 
             try
             {
                 // 1. 更新対象のInspectorを取得（リストの先頭）
                 var targetInspector = _rotationOrder[0];
 
-                // 2. そのInspectorを一瞬アンロック
-                // UnityはアンロックされたInspectorに対して、現在のSelection内容を反映しようとする
+                // 2. 新方式: 直接更新を試行
+                if (InspectorReflection.IsDirectUpdateAvailable)
+                {
+                    bool success = InspectorReflection.SetInspectedObject(targetInspector, newSelection);
+                    if (success)
+                    {
+                        // 同期的に完了 — ローテーション順序を更新
+                        _rotationOrder.RemoveAt(0);
+                        _rotationOrder.Add(targetInspector);
+                        _isUpdating = false;
+
+                        // 更新完了イベントを発行（Phase 3のフィードバック用）
+                        EventBus.Instance.Publish(new RotationUpdateCompletedEvent
+                        {
+                            UpdatedInspector = targetInspector,
+                            DisplayedObject = newSelection
+                        });
+
+                        if (AutoFocusOnUpdate)
+                        {
+                            targetInspector.Focus();
+                        }
+                        return;
+                    }
+                    // 直接更新失敗 → フォールバック
+                    Debug.LogWarning("[InspectorManager] Direct update failed, falling back to legacy mode.");
+                }
+
+                // 3. フォールバック（旧方式）: アンロック→delayCall→再ロック
                 _inspectorService.SetLocked(targetInspector, false);
-                
-                // 3. Selectionが反映されるように再描画を要求
                 targetInspector.Repaint();
 
-                // 4. 即座に再ロック（Unityの更新イベントループ内で処理されることを期待）
-                // ただし、即時ロックだと反映されない可能性があるため、delayCallを使用
                 EditorApplication.delayCall += () =>
                 {
-                    // もしこのフレームで反映されていなければ、Selectionを再セットして強制更新
-                    // （通常はUnlock状態でSelection変更イベントが来れば自動更新されるはずだが、
-                    //  ここでは既にイベントが来ているので手動でトリガーが必要な場合がある）
-                    
-                    // 念のため再ロック
                     _inspectorService.SetLocked(targetInspector, true);
-                    
-                    // ローテーション順序を更新（更新したものを末尾へ）
+
                     _rotationOrder.RemoveAt(0);
                     _rotationOrder.Add(targetInspector);
-                    
+
+                    // 更新完了イベントを発行
+                    EventBus.Instance.Publish(new RotationUpdateCompletedEvent
+                    {
+                        UpdatedInspector = targetInspector,
+                        DisplayedObject = newSelection
+                    });
+
+                    if (AutoFocusOnUpdate)
+                    {
+                        targetInspector.Focus();
+                    }
+
                     _isUpdating = false;
                 };
             }

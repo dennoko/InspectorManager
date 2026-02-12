@@ -14,8 +14,12 @@ namespace InspectorManager.Core
         private static Type _inspectorWindowType;
         private static PropertyInfo _isLockedProperty;
         private static FieldInfo _trackerField;
+        private static MethodInfo _forceRebuildMethod;
+        private static MethodInfo _setObjectsLockedMethod;
+        private static MethodInfo _flushOptimizedGUI;
         private static bool _initialized;
         private static bool _initializationFailed;
+        private static bool _directUpdateAvailable;
 
         /// <summary>
         /// InspectorWindowの型を取得
@@ -75,6 +79,35 @@ namespace InspectorManager.Core
                     "m_Tracker",
                     BindingFlags.Instance | BindingFlags.NonPublic
                 );
+
+                // ActiveEditorTracker.SetObjectsLockedByThisTracker を取得（直接更新用）
+                if (_trackerField != null)
+                {
+                    var trackerType = typeof(ActiveEditorTracker);
+                    _setObjectsLockedMethod = trackerType.GetMethod(
+                        "SetObjectsLockedByThisTracker",
+                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                        null,
+                        new Type[] { typeof(List<UnityEngine.Object>) },
+                        null
+                    );
+                    _forceRebuildMethod = trackerType.GetMethod(
+                        "ForceRebuild",
+                        BindingFlags.Instance | BindingFlags.Public
+                    );
+                }
+
+                // FlushAllOptimizedGUIBlocksIfNeeded（Inspector内部の再描画強制用）
+                _flushOptimizedGUI = _inspectorWindowType.GetMethod(
+                    "FlushAllOptimizedGUIBlocksIfNeeded",
+                    BindingFlags.Instance | BindingFlags.NonPublic
+                );
+
+                _directUpdateAvailable = (_trackerField != null && _setObjectsLockedMethod != null);
+                if (_directUpdateAvailable)
+                {
+                    Debug.Log("[InspectorManager] Direct Inspector update mode available.");
+                }
             }
             catch (Exception ex)
             {
@@ -174,6 +207,60 @@ namespace InspectorManager.Core
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 直接更新モードが利用可能かどうか
+        /// </summary>
+        public static bool IsDirectUpdateAvailable
+        {
+            get
+            {
+                EnsureInitialized();
+                return _directUpdateAvailable;
+            }
+        }
+
+        /// <summary>
+        /// ロック状態のInspectorウィンドウの表示対象を直接変更する。
+        /// アンロック/再ロックを行わずに同期的に更新できる。
+        /// </summary>
+        /// <returns>成功した場合true</returns>
+        public static bool SetInspectedObject(EditorWindow inspector, UnityEngine.Object targetObject)
+        {
+            if (!IsAvailable || inspector == null || targetObject == null) return false;
+            if (!_directUpdateAvailable) return false;
+
+            try
+            {
+                var tracker = _trackerField.GetValue(inspector) as ActiveEditorTracker;
+                if (tracker == null) return false;
+
+                // SetObjectsLockedByThisTrackerでロック中のInspectorに
+                // 新しいオブジェクトを強制的に設定する
+                var objectsList = new List<UnityEngine.Object> { targetObject };
+                _setObjectsLockedMethod.Invoke(tracker, new object[] { objectsList });
+
+                // TrackerのForceRebuildで即時にEditorを再構築
+                if (_forceRebuildMethod != null)
+                {
+                    _forceRebuildMethod.Invoke(tracker, null);
+                }
+
+                // GUI最適化ブロックのフラッシュ（表示の即時更新）
+                if (_flushOptimizedGUI != null)
+                {
+                    _flushOptimizedGUI.Invoke(inspector, null);
+                }
+
+                inspector.Repaint();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[InspectorManager] Direct update failed: {ex.Message}");
+                return false;
+            }
         }
     }
 }

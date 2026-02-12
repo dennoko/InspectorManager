@@ -38,5 +38,26 @@ namespace InspectorManager.Controllers
                 }
             }
         }
+
+        /// <summary>
+        /// 全Inspectorのロックを一括切り替え (Ctrl+Shift+L)
+        /// </summary>
+        [Shortcut("Inspector Manager/Toggle All Lock", KeyCode.L,
+            ShortcutModifiers.Action | ShortcutModifiers.Shift)]
+        public static void ToggleAllLock()
+        {
+            var inspectorService = ServiceLocator.Instance.TryResolve<IInspectorWindowService>();
+            if (inspectorService == null || !inspectorService.IsAvailable) return;
+
+            var inspectors = inspectorService.GetAllInspectors();
+            if (inspectors.Count == 0) return;
+
+            // 最初のInspectorのロック状態を基準に全体を反転
+            var targetState = !inspectorService.IsLocked(inspectors[0]);
+            foreach (var inspector in inspectors)
+            {
+                inspectorService.SetLocked(inspector, targetState);
+            }
+        }
     }
 }

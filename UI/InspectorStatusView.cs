@@ -11,9 +11,14 @@ namespace InspectorManager.UI
     public class InspectorStatusView
     {
         private readonly IInspectorWindowService _inspectorService;
-        private readonly Controllers.RotationLockController _rotationLockController; // 追加
-        private readonly ILocalizationService _localizationService; // 追加
+        private readonly Controllers.RotationLockController _rotationLockController;
+        private readonly ILocalizationService _localizationService;
         private Vector2 _scrollPosition;
+        
+        // ハイライト用
+        private EditorWindow _highlightedInspector;
+        private double _highlightEndTime;
+        private const double HighlightDuration = 1.0;
 
         public InspectorStatusView(
             IInspectorWindowService inspectorService,
@@ -25,12 +30,18 @@ namespace InspectorManager.UI
             _localizationService = localizationService;
         }
 
+        public void Flash(EditorWindow inspector)
+        {
+            _highlightedInspector = inspector;
+            _highlightEndTime = EditorApplication.timeSinceStartup + HighlightDuration;
+        }
+
         public void Draw()
         {
             if (!_inspectorService.IsAvailable)
             {
                 EditorGUILayout.HelpBox(
-                    "Inspector APIへのアクセスに失敗しました。\nこのUnityバージョンはサポートされていない可能性があります。",
+                    _localizationService.GetString("Error_ReflectionFailed"),
                     MessageType.Error);
                 return;
             }
@@ -39,7 +50,7 @@ namespace InspectorManager.UI
 
             if (inspectors.Count == 0)
             {
-                EditorGUILayout.HelpBox("Inspectorウィンドウが見つかりません。", MessageType.Info);
+                EditorGUILayout.HelpBox(_localizationService.GetString("Status_NoInspectors"), MessageType.Info);
                 return;
             }
 
@@ -58,13 +69,12 @@ namespace InspectorManager.UI
             EditorGUILayout.BeginHorizontal();
             {
                 // LocalizationServiceがnullの場合の対策（古いコードとの互換性など）
-                var lockAllText = _localizationService != null ? "全てロック" : "Lock All"; 
-                // 本当はこれもローカライズキーに入れるべきだが、今回は省略
+                var lockAllText = _localizationService?.GetString("Button_LockAll") ?? "Lock All";
                 if (GUILayout.Button(lockAllText, Styles.MiniButton))
                 {
                     _inspectorService.LockAll();
                 }
-                var unlockAllText = _localizationService != null ? "全てアンロック" : "Unlock All";
+                var unlockAllText = _localizationService?.GetString("Button_UnlockAll") ?? "Unlock All";
                 if (GUILayout.Button(unlockAllText, Styles.MiniButton))
                 {
                     _inspectorService.UnlockAll();
@@ -80,11 +90,22 @@ namespace InspectorManager.UI
             
             // 除外状態
             var isExcluded = _rotationLockController != null && _rotationLockController.IsExcluded(inspector);
+            
+            // ハイライト判定
+            bool isHighlighted = inspector == _highlightedInspector && EditorApplication.timeSinceStartup < _highlightEndTime;
 
             // 背景色 (除外時は少し暗くするなど)
-            var bgColor = isExcluded 
+            var baseColor = isExcluded 
                 ? new Color(0.25f, 0.25f, 0.25f, 1f) // Dark Gray for Excluded
                 : (isLocked ? Styles.Colors.LockedBackground : Styles.Colors.UnlockedBackground);
+
+            if (isHighlighted)
+            {
+                // ハイライト時は緑色を強く
+                baseColor = Color.Lerp(baseColor, new Color(0.2f, 0.9f, 0.2f, 0.5f), 0.7f);
+            }
+
+            var bgColor = baseColor;
 
             var rect = EditorGUILayout.BeginHorizontal(Styles.ListItem);
             {
@@ -109,8 +130,34 @@ namespace InspectorManager.UI
                 }
                 GUILayout.Label(nameLabel, GUILayout.Width(100));
 
+                // Rotation Order Badge (if rotation is enabled)
+                if (_rotationLockController != null && _rotationLockController.IsEnabled && !isExcluded)
+                {
+                    int rotationIndex = _rotationLockController.GetRotationOrderIndex(inspector);
+                    if (rotationIndex >= 0)
+                    {
+                        var badgeContent = rotationIndex == 0 ? "NEXT" : (rotationIndex).ToString(); // 0 is Next, 1 is 2nd... or just 1, 2, 3? "Wait 1", "Wait 2"?
+                        // Use "NEXT" for 0, and numbers for queue
+                        
+                        var badgeStyle = new GUIStyle(EditorStyles.miniLabel);
+                        badgeStyle.normal.textColor = Color.white;
+                        badgeStyle.alignment = TextAnchor.MiddleCenter;
+                        badgeStyle.fixedWidth = rotationIndex == 0 ? 36 : 20;
+
+                        var badgeColor = rotationIndex == 0 
+                            ? new Color(0.2f, 0.6f, 1f, 1f) // Blue for Next
+                            : new Color(0.4f, 0.4f, 0.4f, 1f); // Gray for others
+                        
+                        var badgeRect = GUILayoutUtility.GetRect(new GUIContent(badgeContent), badgeStyle);
+                        var originalColor = GUI.backgroundColor;
+                        GUI.backgroundColor = badgeColor;
+                        GUI.Box(badgeRect, badgeContent, EditorStyles.helpBox); // Use helpBox style for background
+                        GUI.backgroundColor = originalColor;
+                    }
+                }
+
                 // 表示中のオブジェクト名
-                var objectName = inspectedObject != null ? inspectedObject.name : "(なし)";
+                var objectName = inspectedObject != null ? inspectedObject.name : (_localizationService?.GetString("Status_NoObject") ?? "(None)");
                 GUILayout.Label(objectName, EditorStyles.label);
 
                 GUILayout.FlexibleSpace();
@@ -132,7 +179,7 @@ namespace InspectorManager.UI
                 }
 
                 // フォーカスボタン
-                if (GUILayout.Button("表示", Styles.MiniButton, GUILayout.Width(40)))
+                if (GUILayout.Button(_localizationService?.GetString("Button_Focus") ?? "Focus", Styles.MiniButton, GUILayout.Width(40)))
                 {
                     inspector.Focus();
                 }

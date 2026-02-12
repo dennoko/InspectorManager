@@ -14,9 +14,11 @@ namespace InspectorManager.UI
     public class InspectorOverlayController : IDisposable
     {
         private readonly IInspectorWindowService _inspectorService;
-        private readonly ILocalizationService _localizationService;
+        private readonly Services.ILocalizationService _localizationService;
+        private readonly Controllers.RotationLockController _rotationLockController;
         private const string OverlayName = "InspectorManagerOverlay";
         private const string LockButtonName = "InspectorManagerLockButton";
+        private const string NextBadgeName = "InspectorManagerNextBadge";
         
         // 処理済みInspectorと追加したエレメントの追跡
         private Dictionary<EditorWindow, VisualElement> _activeOverlays = new Dictionary<EditorWindow, VisualElement>();
@@ -25,16 +27,22 @@ namespace InspectorManager.UI
         private double _lastUpdateTime;
         private const double updateInterval = 0.5f; // 0.5秒おきにチェック
 
-        public InspectorOverlayController(IInspectorWindowService inspectorService, ILocalizationService localizationService)
+        public InspectorOverlayController(
+            IInspectorWindowService inspectorService, 
+            ILocalizationService localizationService,
+            Controllers.RotationLockController rotationLockController = null)
         {
             _inspectorService = inspectorService;
             _localizationService = localizationService;
+            _rotationLockController = rotationLockController;
             
             EditorApplication.update += OnUpdate;
             if (_localizationService != null)
             {
                 _localizationService.OnLanguageChanged += RefreshOverlays;
             }
+
+            Core.EventBus.Instance.Subscribe<Core.RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
         }
 
         public void Dispose()
@@ -44,7 +52,31 @@ namespace InspectorManager.UI
             {
                 _localizationService.OnLanguageChanged -= RefreshOverlays;
             }
+            Core.EventBus.Instance.Unsubscribe<Core.RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
             RemoveAllOverlays();
+        }
+
+        private void OnRotationUpdateCompleted(Core.RotationUpdateCompletedEvent evt)
+        {
+            // 更新されたInspectorのオーバーレイをフラッシュ
+            if (_activeOverlays.TryGetValue(evt.UpdatedInspector, out var overlay))
+            {
+                var button = overlay.Q<Button>(LockButtonName);
+                if (button != null)
+                {
+                    // フラッシュエフェクト（緑色に点灯してから戻る）
+                    button.style.backgroundColor = new Color(0.2f, 0.8f, 0.2f, 1f);
+                    // 戻りは次回のUpdateOverlayか、scheduleで処理
+                    button.schedule.Execute(() => 
+                    {
+                        // UpdateOverlayで本来の色に戻ることを期待して、refresh呼び出し
+                        UpdateOverlay(evt.UpdatedInspector, -1); 
+                    }).ExecuteLater(1500);
+                }
+            }
+
+            // 全オーバーレイの状態（Nextバッジなど）を更新
+            RefreshOverlays();
         }
 
         private void OnUpdate()
@@ -132,6 +164,30 @@ namespace InspectorManager.UI
                         : new Color(0.2f, 0.2f, 0.2f, 1f);
                     
                     button.style.backgroundColor = color;
+                }
+
+                // Nextバッジの表示制御
+                var nextBadge = overlay.Q<Label>(NextBadgeName);
+                bool isNext = _rotationLockController != null && _rotationLockController.IsNextTarget(inspector);
+                
+                if (nextBadge != null)
+                {
+                    nextBadge.style.display = isNext ? DisplayStyle.Flex : DisplayStyle.None;
+                }
+                else if (isNext)
+                {
+                    // バッジがないけどNextなら作成
+                    nextBadge = new Label("▶ Next");
+                    nextBadge.name = NextBadgeName;
+                    nextBadge.style.backgroundColor = new Color(0.2f, 0.6f, 1f, 1f);
+                    nextBadge.style.color = Color.white;
+                    nextBadge.style.paddingLeft = 4;
+                    nextBadge.style.paddingRight = 4;
+                    nextBadge.style.borderTopRightRadius = 3;
+                    nextBadge.style.borderBottomRightRadius = 3;
+                    nextBadge.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    
+                    overlay.Add(nextBadge);
                 }
             }
         }

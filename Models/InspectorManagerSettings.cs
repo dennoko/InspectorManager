@@ -16,6 +16,7 @@ namespace InspectorManager.Models
         [SerializeField] private bool _autoCleanInvalidHistory = true;
         [SerializeField] private bool _blockFolderSelection = true;
         [SerializeField] private string _language = "ja";
+        [SerializeField] private bool _autoFocusOnUpdate = false;
 
         /// <summary>
         /// 言語設定 ("ja" or "en")
@@ -24,6 +25,15 @@ namespace InspectorManager.Models
         {
             get => _language;
             set => _language = value;
+        }
+
+        /// <summary>
+        /// ローテーション更新時に自動でInspectorにフォーカスするか
+        /// </summary>
+        public bool AutoFocusOnUpdate
+        {
+            get => _autoFocusOnUpdate;
+            set => _autoFocusOnUpdate = value;
         }
 
         /// <summary>
@@ -93,7 +103,8 @@ namespace InspectorManager.Models
                 _recordAssets = true,
                 _autoCleanInvalidHistory = true,
                 _blockFolderSelection = true,
-                _language = "ja"
+                _language = "ja",
+                _autoFocusOnUpdate = false
             };
         }
 
@@ -110,7 +121,8 @@ namespace InspectorManager.Models
                 _recordAssets = _recordAssets,
                 _autoCleanInvalidHistory = _autoCleanInvalidHistory,
                 _blockFolderSelection = _blockFolderSelection,
-                _language = _language
+                _language = _language,
+                _autoFocusOnUpdate = _autoFocusOnUpdate
             };
         }
     }

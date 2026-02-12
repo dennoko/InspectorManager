@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
+using UnityEngine;
 
 namespace InspectorManager.Core
 {
@@ -132,6 +134,15 @@ namespace InspectorManager.Core
     /// </summary>
     public struct FavoritesUpdatedEvent
     {
+    }
+
+    /// <summary>
+    /// ローテーション更新が完了した
+    /// </summary>
+    public struct RotationUpdateCompletedEvent
+    {
+        public EditorWindow UpdatedInspector { get; set; }
+        public UnityEngine.Object DisplayedObject { get; set; }
     }
 
     #endregion

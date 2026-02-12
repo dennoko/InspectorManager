@@ -1,3 +1,4 @@
+using System;
 using InspectorManager.Models;
 using InspectorManager.Services;
 using UnityEditor;
@@ -7,7 +8,7 @@ namespace InspectorManager.Controllers
     /// <summary>
     /// 履歴・お気に入り操作のコーディネート
     /// </summary>
-    public class HistoryController
+    public class HistoryController : IDisposable
     {
         private readonly IHistoryService _historyService;
         private readonly IFavoritesService _favoritesService;
@@ -34,8 +35,12 @@ namespace InspectorManager.Controllers
             Selection.selectionChanged += OnSelectionChanged;
         }
 
-        ~HistoryController()
+        private bool _disposed;
+
+        public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             Selection.selectionChanged -= OnSelectionChanged;
         }
 

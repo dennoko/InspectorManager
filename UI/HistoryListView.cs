@@ -13,12 +13,14 @@ namespace InspectorManager.UI
     {
         private readonly IHistoryService _historyService;
         private readonly IFavoritesService _favoritesService;
+        private readonly ILocalizationService _localizationService;
         private Vector2 _scrollPosition;
 
-        public HistoryListView(IHistoryService historyService, IFavoritesService favoritesService)
+        public HistoryListView(IHistoryService historyService, IFavoritesService favoritesService, ILocalizationService localizationService)
         {
             _historyService = historyService;
             _favoritesService = favoritesService;
+            _localizationService = localizationService;
         }
 
         public void Draw()
@@ -47,9 +49,10 @@ namespace InspectorManager.UI
                 if (GUILayout.Button(Styles.TrashIcon, EditorStyles.toolbarButton, GUILayout.Width(24)))
                 {
                     if (EditorUtility.DisplayDialog(
-                        "履歴をクリア",
-                        "選択履歴をすべて削除しますか？",
-                        "クリア", "キャンセル"))
+                        _localizationService.GetString("History_Clear"),
+                        _localizationService.GetString("Confirm_ClearHistory"),
+                        _localizationService.GetString("Button_Clear"),
+                        _localizationService.GetString("Button_Cancel")))
                     {
                         _historyService.ClearHistory();
                     }
@@ -63,7 +66,7 @@ namespace InspectorManager.UI
 
             if (history.Count == 0)
             {
-                EditorGUILayout.HelpBox("履歴がありません。", MessageType.Info);
+                EditorGUILayout.HelpBox(_localizationService.GetString("History_Empty"), MessageType.Info);
                 return;
             }
 
