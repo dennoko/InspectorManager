@@ -1,4 +1,5 @@
 using System;
+using InspectorManager.Controllers;
 using UnityEngine;
 
 namespace InspectorManager.Models
@@ -17,6 +18,7 @@ namespace InspectorManager.Models
         [SerializeField] private bool _blockFolderSelection = true;
         [SerializeField] private string _language = "ja";
         [SerializeField] private bool _autoFocusOnUpdate = true;
+        [SerializeField] private int _rotationMode = 0;
 
         // ── ブロック設定: カテゴリA（デフォルト ON）──
         [SerializeField] private bool _blockDefaultAsset = true;
@@ -54,6 +56,15 @@ namespace InspectorManager.Models
         {
             get => _blockFolderSelection;
             set => _blockFolderSelection = value;
+        }
+
+        /// <summary>
+        /// ローテーションモード (Cycle / History)
+        /// </summary>
+        public RotationMode RotationMode
+        {
+            get => (RotationMode)_rotationMode;
+            set => _rotationMode = (int)value;
         }
 
         /// <summary>
@@ -160,6 +171,7 @@ namespace InspectorManager.Models
                 _blockFolderSelection = true,
                 _language = "ja",
                 _autoFocusOnUpdate = true,
+                _rotationMode = 0,
                 // カテゴリA
                 _blockDefaultAsset = true,
                 _blockAsmDef = true,
@@ -187,6 +199,7 @@ namespace InspectorManager.Models
                 _blockFolderSelection = _blockFolderSelection,
                 _language = _language,
                 _autoFocusOnUpdate = _autoFocusOnUpdate,
+                _rotationMode = _rotationMode,
                 _blockDefaultAsset = _blockDefaultAsset,
                 _blockAsmDef = _blockAsmDef,
                 _blockNativePlugin = _blockNativePlugin,

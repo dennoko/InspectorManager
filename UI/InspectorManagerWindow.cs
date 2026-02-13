@@ -112,6 +112,7 @@ namespace InspectorManager.UI
                 _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
                 _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
                 _rotationLockController.FilterSettings = _settings;
+                _rotationLockController.Mode = _settings.RotationMode;
             }
             // HotkeyControllerからアクセスできるようServiceLocatorに登録
             ServiceLocator.Instance.Register(_rotationLockController);

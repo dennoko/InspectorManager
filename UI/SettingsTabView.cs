@@ -118,6 +118,31 @@ namespace InspectorManager.UI
                     _rotationLockController.AutoFocusOnUpdate = newAutoFocus;
             }
 
+            // ── ローテーションモード選択 ──
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(12);
+            EditorGUILayout.LabelField(
+                _localizationService.GetString("Settings_RotationMode"),
+                GUILayout.Width(120));
+            var modeLabels = new string[]
+            {
+                _localizationService.GetString("RotationMode_Cycle"),
+                _localizationService.GetString("RotationMode_History")
+            };
+            var newMode = (Controllers.RotationMode)EditorGUILayout.Popup(
+                (int)_settings.RotationMode, modeLabels);
+            GUILayout.Space(12);
+            EditorGUILayout.EndHorizontal();
+
+            if (newMode != _settings.RotationMode)
+            {
+                _settings.RotationMode = newMode;
+                if (_rotationLockController != null)
+                    _rotationLockController.Mode = newMode;
+                OnSettingsChanged?.Invoke();
+            }
+
             EditorGUILayout.Space(4);
             DrawBlockFilterSection();
         }

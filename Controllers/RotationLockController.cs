@@ -24,6 +24,9 @@ namespace InspectorManager.Controllers
         // ローテーション順序（EditorWindow参照で管理、インデックス0が更新対象）
         private List<EditorWindow> _rotationOrder = new List<EditorWindow>();
         
+        // 履歴モード用の選択履歴
+        private readonly List<UnityEngine.Object> _selectionHistory = new List<UnityEngine.Object>();
+        
         // 更新処理中フラグ
         private bool _isUpdating;
         
@@ -36,6 +39,11 @@ namespace InspectorManager.Controllers
         private bool _disposed;
 
         private const string SettingsKey = "RotationLockSettings";
+
+        /// <summary>
+        /// 現在のローテーションモード
+        /// </summary>
+        public RotationMode Mode { get; set; } = RotationMode.Cycle;
 
         public bool IsEnabled
         {
@@ -250,7 +258,14 @@ namespace InspectorManager.Controllers
             SyncInspectorList();
             if (_rotationOrder.Count == 0) return;
 
-            PerformRotationUpdate(newSelection);
+            if (Mode == RotationMode.History)
+            {
+                PerformHistoryUpdate(newSelection);
+            }
+            else
+            {
+                PerformRotationUpdate(newSelection);
+            }
         }
 
         /// <summary>
@@ -346,6 +361,74 @@ namespace InspectorManager.Controllers
             {
                 _rotationOrder.Remove(targetInspector);
                 _rotationOrder.Insert(0, targetInspector);
+            }
+        }
+
+        /// <summary>
+        /// 履歴モードのカスケード更新処理
+        /// 各Inspectorに固定位置の履歴を表示する
+        /// </summary>
+        private void PerformHistoryUpdate(UnityEngine.Object newSelection)
+        {
+            if (_rotationOrder.Count == 0) return;
+
+            _isUpdating = true;
+
+            try
+            {
+                // 履歴の先頭に新しい選択を追加
+                _selectionHistory.Insert(0, newSelection);
+
+                // 履歴をInspector数+余裕分まで保持
+                int maxHistory = _rotationOrder.Count + 5;
+                while (_selectionHistory.Count > maxHistory)
+                {
+                    _selectionHistory.RemoveAt(_selectionHistory.Count - 1);
+                }
+
+                if (!InspectorReflection.IsDirectUpdateAvailable)
+                {
+                    // 直接更新が使えない場合はサイクルモードにフォールバック
+                    Debug.LogWarning("[InspectorManager] Direct update not available, falling back to Cycle mode.");
+                    _selectionHistory.Clear();
+                    _isUpdating = false;
+                    PerformRotationUpdate(newSelection);
+                    return;
+                }
+
+                // 各Inspectorに対応する履歴を設定
+                for (int i = 0; i < _rotationOrder.Count; i++)
+                {
+                    if (i >= _selectionHistory.Count) break;
+
+                    var inspector = _rotationOrder[i];
+                    var historyObject = _selectionHistory[i];
+
+                    // nullや破棄済みオブジェクトはスキップ
+                    if (historyObject == null) continue;
+
+                    InspectorReflection.SetInspectedObject(inspector, historyObject);
+                }
+
+                // 最初のInspectorの更新完了を通知
+                EventBus.Instance.Publish(new RotationUpdateCompletedEvent
+                {
+                    UpdatedInspector = _rotationOrder[0],
+                    DisplayedObject = newSelection
+                });
+
+                if (AutoFocusOnUpdate)
+                {
+                    _rotationOrder[0].Focus();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InspectorManager] History update failed: {ex.Message}");
+            }
+            finally
+            {
+                _isUpdating = false;
             }
         }
 
