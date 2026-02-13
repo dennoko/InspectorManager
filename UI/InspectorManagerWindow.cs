@@ -75,8 +75,8 @@ namespace InspectorManager.UI
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged -= Repaint;
 
-            // コントローラーの確実な破棄
-            _rotationLockController?.Dispose();
+            // コントローラーの確実な破棄（Unregister内でDisposeも呼ばれる）
+            ServiceLocator.Instance.Unregister<RotationLockController>();
             _rotationLockController = null;
 
             _historyController?.Dispose();

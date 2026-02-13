@@ -49,10 +49,12 @@ namespace InspectorManager.Controllers
 
                     if (_isEnabled)
                     {
+                        _isPaused = false;
                         InitializeRotation();
                     }
                     else
                     {
+                        _isPaused = false;
                         _inspectorService.UnlockAll();
                         _rotationOrder.Clear();
                     }
@@ -296,10 +298,15 @@ namespace InspectorManager.Controllers
 
                 EditorApplication.delayCall += () =>
                 {
+                    if (_disposed) return;
+
                     _inspectorService.SetLocked(targetInspector, true);
 
-                    _rotationOrder.RemoveAt(0);
-                    _rotationOrder.Add(targetInspector);
+                    if (_rotationOrder.Count > 0)
+                    {
+                        _rotationOrder.RemoveAt(0);
+                        _rotationOrder.Add(targetInspector);
+                    }
 
                     EventBus.Instance.Publish(new RotationUpdateCompletedEvent
                     {

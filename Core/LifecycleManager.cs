@@ -72,7 +72,9 @@ namespace InspectorManager.Core
         {
             try
             {
-                ServiceLocator.Instance.Clear();
+                // EventBusのみクリア。ServiceLocatorの所有権はウィンドウのOnDisable()に委ねる。
+                // ServiceLocator.Clear()はIDisposableのDisposeも呼ぶため、
+                // 他のコンポーネントが所有するオブジェクトを二重Disposeするリスクがある。
                 EventBus.Instance.Clear();
             }
             catch (System.Exception ex)
