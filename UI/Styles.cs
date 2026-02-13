@@ -216,41 +216,36 @@ namespace InspectorManager.UI
             };
 
             // ── バッジ: Next ──
-            _badgeNext = new GUIStyle(EditorStyles.miniLabel)
+            _badgeNext = new GUIStyle(EditorStyles.label)
             {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 9,
+                alignment = TextAnchor.MiddleLeft,
+                fontSize = 10,
                 fontStyle = FontStyle.Bold,
-                fixedWidth = 40,
                 fixedHeight = 16,
-                padding = new RectOffset(2, 2, 1, 1),
+                padding = new RectOffset(0, 0, 0, 0),
             };
-            _badgeNext.normal.textColor = Color.white;
-            _badgeNext.normal.background = CreateRoundedTexture(Colors.AccentBlue, 6);
+            _badgeNext.normal.textColor = Colors.AccentBlue;
 
             // ── バッジ: 順序番号 ──
             _badgeOrder = new GUIStyle(EditorStyles.miniLabel)
             {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 9,
-                fixedWidth = 20,
+                alignment = TextAnchor.MiddleLeft,
+                fontSize = 10,
                 fixedHeight = 16,
                 padding = new RectOffset(2, 2, 1, 1),
             };
-            _badgeOrder.normal.textColor = Colors.TextSecondary;
-            _badgeOrder.normal.background = CreateRoundedTexture(new Color(0.35f, 0.35f, 0.35f, 1f), 6);
+            _badgeOrder.normal.textColor = Colors.TextBright;
 
             // ── バッジ: 除外 ──
             _badgeExcluded = new GUIStyle(EditorStyles.miniLabel)
             {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 9,
+                alignment = TextAnchor.MiddleLeft,
+                fontSize = 10,
                 fontStyle = FontStyle.Italic,
                 fixedHeight = 16,
-                padding = new RectOffset(4, 4, 1, 1),
+                padding = new RectOffset(2, 2, 1, 1),
             };
             _badgeExcluded.normal.textColor = Colors.TextMuted;
-            _badgeExcluded.normal.background = CreateRoundedTexture(new Color(0.3f, 0.3f, 0.3f, 0.5f), 6);
 
             // ── 型名ラベル（キャッシュ）──
             _typeLabel = new GUIStyle(EditorStyles.miniLabel);

@@ -18,6 +18,7 @@ namespace InspectorManager.UI
         private readonly RotationLockController _rotationLockController;
 
         private InspectorManagerSettings _settings;
+        private Vector2 _scrollPosition;
 
         /// <summary>
         /// 設定が変更された場合に呼び出されるコールバック
@@ -53,6 +54,8 @@ namespace InspectorManager.UI
 
         public void Draw()
         {
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+
             EditorGUILayout.Space(6);
             DrawSectionHeader(_localizationService.GetString("Header_Settings"));
 
@@ -70,6 +73,8 @@ namespace InspectorManager.UI
             {
                 OnSettingsChanged?.Invoke();
             }
+
+            EditorGUILayout.EndScrollView();
         }
 
         private void DrawLanguageSection()

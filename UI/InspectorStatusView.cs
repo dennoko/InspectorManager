@@ -59,7 +59,7 @@ namespace InspectorManager.UI
                 return;
             }
 
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, GUILayout.MaxHeight(200));
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
             for (int i = 0; i < inspectors.Count; i++)
             {
@@ -155,8 +155,8 @@ namespace InspectorManager.UI
                     if (isExcluded)
                     {
                         // 除外バッジ
-                        var excText = _localizationService?.GetString("Status_Excluded") ?? "Ex";
-                        GUILayout.Label(excText, Styles.BadgeExcluded);
+                        // 除外バッジ
+                        GUILayout.Label("(Ex)", Styles.BadgeExcluded, GUILayout.Width(30));
                     }
                     else
                     {
@@ -165,11 +165,11 @@ namespace InspectorManager.UI
                         {
                             if (rotationIndex == 0)
                             {
-                                GUILayout.Label("NEXT", Styles.BadgeNext);
+                                GUILayout.Label("▶ NEXT", Styles.BadgeNext, GUILayout.Width(50));
                             }
                             else
                             {
-                                GUILayout.Label($"#{rotationIndex + 1}", Styles.BadgeOrder);
+                                GUILayout.Label($"{rotationIndex + 1}.", Styles.BadgeOrder, GUILayout.Width(24));
                             }
                         }
                     }
