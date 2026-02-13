@@ -19,6 +19,7 @@ namespace InspectorManager.UI
 
         private InspectorManagerSettings _settings;
         private Vector2 _scrollPosition;
+        private bool _blockFilterFoldout = true;
 
         /// <summary>
         /// 設定が変更された場合に呼び出されるコールバック
@@ -108,15 +109,6 @@ namespace InspectorManager.UI
             DrawSubSectionHeader(_localizationService.GetString("Settings_Rotation"));
             EditorGUILayout.Space(2);
 
-            bool newBlockFolder = DrawSettingToggle(
-                _localizationService.GetString("Settings_BlockFolder"), _settings.BlockFolderSelection);
-            if (newBlockFolder != _settings.BlockFolderSelection)
-            {
-                _settings.BlockFolderSelection = newBlockFolder;
-                if (_rotationLockController != null)
-                    _rotationLockController.BlockFolderSelection = newBlockFolder;
-            }
-
             bool newAutoFocus = DrawSettingToggle(
                 _localizationService.GetString("Settings_AutoFocus"), _settings.AutoFocusOnUpdate);
             if (newAutoFocus != _settings.AutoFocusOnUpdate)
@@ -125,6 +117,64 @@ namespace InspectorManager.UI
                 if (_rotationLockController != null)
                     _rotationLockController.AutoFocusOnUpdate = newAutoFocus;
             }
+
+            EditorGUILayout.Space(4);
+            DrawBlockFilterSection();
+        }
+
+        private void DrawBlockFilterSection()
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(12);
+            _blockFilterFoldout = EditorGUILayout.Foldout(_blockFilterFoldout,
+                _localizationService.GetString("Settings_BlockFilter"), true);
+            EditorGUILayout.EndHorizontal();
+
+            if (!_blockFilterFoldout) return;
+
+            // ── カテゴリA: 操作不可なオブジェクト ──
+            DrawBlockCategoryLabel(_localizationService.GetString("Settings_BlockFilter_CategoryA"));
+
+            _settings.BlockFolderSelection = DrawBlockToggle(
+                _localizationService.GetString("Block_Folder"), _settings.BlockFolderSelection);
+            _settings.BlockDefaultAsset = DrawBlockToggle(
+                _localizationService.GetString("Block_DefaultAsset"), _settings.BlockDefaultAsset);
+            _settings.BlockAsmDef = DrawBlockToggle(
+                _localizationService.GetString("Block_AsmDef"), _settings.BlockAsmDef);
+            _settings.BlockNativePlugin = DrawBlockToggle(
+                _localizationService.GetString("Block_NativePlugin"), _settings.BlockNativePlugin);
+
+            EditorGUILayout.Space(2);
+
+            // ── カテゴリB: 操作が限定的なオブジェクト ──
+            DrawBlockCategoryLabel(_localizationService.GetString("Settings_BlockFilter_CategoryB"));
+
+            _settings.BlockTextAsset = DrawBlockToggle(
+                _localizationService.GetString("Block_TextAsset"), _settings.BlockTextAsset);
+            _settings.BlockLightingSettings = DrawBlockToggle(
+                _localizationService.GetString("Block_LightingSettings"), _settings.BlockLightingSettings);
+            _settings.BlockShader = DrawBlockToggle(
+                _localizationService.GetString("Block_Shader"), _settings.BlockShader);
+            _settings.BlockFont = DrawBlockToggle(
+                _localizationService.GetString("Block_Font"), _settings.BlockFont);
+        }
+
+        private void DrawBlockCategoryLabel(string text)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(20);
+            GUILayout.Label(text, EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private bool DrawBlockToggle(string label, bool currentValue)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(36); // インデントを増やす
+            var newValue = EditorGUILayout.Toggle(label, currentValue);
+            GUILayout.Space(12);
+            EditorGUILayout.EndHorizontal();
+            return newValue;
         }
 
         private void DrawHistorySection()
@@ -254,7 +304,7 @@ namespace InspectorManager.UI
         private bool DrawSettingToggle(string label, bool currentValue)
         {
             EditorGUILayout.BeginHorizontal();
-            GUILayout.Space(12);
+            GUILayout.Space(24); // インデントを少し増やす
             var newValue = EditorGUILayout.Toggle(label, currentValue);
             GUILayout.Space(12);
             EditorGUILayout.EndHorizontal();

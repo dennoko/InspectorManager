@@ -65,6 +65,11 @@ namespace InspectorManager.Controllers
         public bool AutoFocusOnUpdate { get; set; }
         public bool BlockFolderSelection { get; set; }
 
+        /// <summary>
+        /// ブロックフィルタリング用の設定参照
+        /// </summary>
+        public InspectorManagerSettings FilterSettings { get; set; }
+
         public bool IsNextTarget(EditorWindow inspector)
         {
             if (_rotationOrder.Count == 0) return false;
@@ -213,14 +218,10 @@ namespace InspectorManager.Controllers
             var newSelection = Selection.activeObject;
             if (newSelection == null) return;
             
-            // フォルダ判定
-            if (BlockFolderSelection)
+            // ブロックフィルタ判定
+            if (FilterSettings != null && SelectionFilter.ShouldBlock(newSelection, FilterSettings))
             {
-                var path = AssetDatabase.GetAssetPath(newSelection);
-                if (!string.IsNullOrEmpty(path) && AssetDatabase.IsValidFolder(path))
-                {
-                    return;
-                }
+                return;
             }
             
             if (newSelection == _lastKnownSelection) return;

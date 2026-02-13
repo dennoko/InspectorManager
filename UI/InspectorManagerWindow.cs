@@ -109,6 +109,7 @@ namespace InspectorManager.UI
             {
                 _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
                 _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
+                _rotationLockController.FilterSettings = _settings;
             }
             _historyController = new HistoryController(_historyService, _favoritesService, _settings);
 

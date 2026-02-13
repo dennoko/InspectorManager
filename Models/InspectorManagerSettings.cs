@@ -18,6 +18,17 @@ namespace InspectorManager.Models
         [SerializeField] private string _language = "ja";
         [SerializeField] private bool _autoFocusOnUpdate = true;
 
+        // ── ブロック設定: カテゴリA（デフォルト ON）──
+        [SerializeField] private bool _blockDefaultAsset = true;
+        [SerializeField] private bool _blockAsmDef = true;
+        [SerializeField] private bool _blockNativePlugin = true;
+
+        // ── ブロック設定: カテゴリB（デフォルト OFF）──
+        [SerializeField] private bool _blockTextAsset = false;
+        [SerializeField] private bool _blockLightingSettings = false;
+        [SerializeField] private bool _blockShader = false;
+        [SerializeField] private bool _blockFont = false;
+
         /// <summary>
         /// 言語設定 ("ja" or "en")
         /// </summary>
@@ -90,6 +101,50 @@ namespace InspectorManager.Models
             set => _autoCleanInvalidHistory = value;
         }
 
+        // ── ブロック設定プロパティ ──
+
+        public bool BlockDefaultAsset
+        {
+            get => _blockDefaultAsset;
+            set => _blockDefaultAsset = value;
+        }
+
+        public bool BlockAsmDef
+        {
+            get => _blockAsmDef;
+            set => _blockAsmDef = value;
+        }
+
+        public bool BlockNativePlugin
+        {
+            get => _blockNativePlugin;
+            set => _blockNativePlugin = value;
+        }
+
+        public bool BlockTextAsset
+        {
+            get => _blockTextAsset;
+            set => _blockTextAsset = value;
+        }
+
+        public bool BlockLightingSettings
+        {
+            get => _blockLightingSettings;
+            set => _blockLightingSettings = value;
+        }
+
+        public bool BlockShader
+        {
+            get => _blockShader;
+            set => _blockShader = value;
+        }
+
+        public bool BlockFont
+        {
+            get => _blockFont;
+            set => _blockFont = value;
+        }
+
         /// <summary>
         /// デフォルト設定を作成
         /// </summary>
@@ -104,7 +159,16 @@ namespace InspectorManager.Models
                 _autoCleanInvalidHistory = true,
                 _blockFolderSelection = true,
                 _language = "ja",
-                _autoFocusOnUpdate = true
+                _autoFocusOnUpdate = true,
+                // カテゴリA
+                _blockDefaultAsset = true,
+                _blockAsmDef = true,
+                _blockNativePlugin = true,
+                // カテゴリB
+                _blockTextAsset = false,
+                _blockLightingSettings = false,
+                _blockShader = false,
+                _blockFont = false
             };
         }
 
@@ -122,7 +186,14 @@ namespace InspectorManager.Models
                 _autoCleanInvalidHistory = _autoCleanInvalidHistory,
                 _blockFolderSelection = _blockFolderSelection,
                 _language = _language,
-                _autoFocusOnUpdate = _autoFocusOnUpdate
+                _autoFocusOnUpdate = _autoFocusOnUpdate,
+                _blockDefaultAsset = _blockDefaultAsset,
+                _blockAsmDef = _blockAsmDef,
+                _blockNativePlugin = _blockNativePlugin,
+                _blockTextAsset = _blockTextAsset,
+                _blockLightingSettings = _blockLightingSettings,
+                _blockShader = _blockShader,
+                _blockFont = _blockFont
             };
         }
     }
