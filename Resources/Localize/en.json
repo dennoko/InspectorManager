@@ -76,5 +76,8 @@
     "Confirm_ClearHistory": "Are you sure you want to clear all selection history?",
     "Button_Clear": "Clear",
     "Toast_FavoriteAdded": "Added to Favorites",
-    "Toast_FavoriteRemoved": "Removed from Favorites"
+    "Toast_FavoriteRemoved": "Removed from Favorites",
+    "Button_AddInspector": "+ Add Inspector",
+    "Tooltip_DragReorder": "Drag to reorder",
+    "Tooltip_CloseInspector": "Close this Inspector"
 }

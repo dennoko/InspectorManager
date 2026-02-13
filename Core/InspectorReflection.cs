@@ -262,5 +262,30 @@ namespace InspectorManager.Core
                 return false;
             }
         }
+
+        /// <summary>
+        /// 新しいInspectorウィンドウを生成する
+        /// </summary>
+        /// <returns>生成されたInspectorウィンドウ。失敗時はnull</returns>
+        public static EditorWindow CreateNewInspector()
+        {
+            EnsureInitialized();
+            if (_inspectorWindowType == null) return null;
+
+            try
+            {
+                var inspector = ScriptableObject.CreateInstance(_inspectorWindowType) as EditorWindow;
+                if (inspector != null)
+                {
+                    inspector.Show();
+                }
+                return inspector;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InspectorManager] Failed to create Inspector: {ex.Message}");
+                return null;
+            }
+        }
     }
 }

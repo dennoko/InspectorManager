@@ -76,5 +76,8 @@
     "Confirm_ClearHistory": "選択履歴をすべて削除しますか？",
     "Button_Clear": "クリア",
     "Toast_FavoriteAdded": "お気に入りに追加しました",
-    "Toast_FavoriteRemoved": "お気に入りから削除しました"
+    "Toast_FavoriteRemoved": "お気に入りから削除しました",
+    "Button_AddInspector": "＋ Inspectorを追加",
+    "Tooltip_DragReorder": "ドラッグで並び替え",
+    "Tooltip_CloseInspector": "このInspectorを閉じる"
 }

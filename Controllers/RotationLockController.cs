@@ -365,6 +365,38 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// ローテーション順序内のInspectorを並び替える
+        /// </summary>
+        public void ReorderInspector(int fromIndex, int toIndex)
+        {
+            if (fromIndex < 0 || fromIndex >= _rotationOrder.Count) return;
+            if (toIndex < 0 || toIndex >= _rotationOrder.Count) return;
+            if (fromIndex == toIndex) return;
+
+            var item = _rotationOrder[fromIndex];
+            _rotationOrder.RemoveAt(fromIndex);
+            _rotationOrder.Insert(toIndex, item);
+        }
+
+        /// <summary>
+        /// Inspector Manager経由で生成されたInspectorをローテーションに追加する
+        /// </summary>
+        public void AddManagedInspector(EditorWindow inspector)
+        {
+            if (inspector == null) return;
+
+            _inspectorService.SetLocked(inspector, true);
+
+            if (!_rotationOrder.Contains(inspector))
+            {
+                _rotationOrder.Add(inspector);
+            }
+
+            // 除外リストから確実に除去
+            _exclusionManager.SetExcluded(inspector, false, _rotationOrder, SyncInspectorList);
+        }
+
+        /// <summary>
         /// 履歴モードのカスケード更新処理
         /// 各Inspectorに固定位置の履歴を表示する
         /// </summary>

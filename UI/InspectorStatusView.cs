@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using InspectorManager.Core;
 using InspectorManager.Services;
 using UnityEditor;
 using UnityEngine;
@@ -19,6 +20,10 @@ namespace InspectorManager.UI
         private EditorWindow _highlightedInspector;
         private double _highlightEndTime;
         private const double HighlightDuration = 1.2;
+
+        // ドラッグ&ドロップ用
+        private int _dragFromIndex = -1;
+        private int _dragOverIndex = -1;
 
         public InspectorStatusView(
             IInspectorWindowService inspectorService,
@@ -56,7 +61,6 @@ namespace InspectorManager.UI
                 EditorGUILayout.HelpBox(_localizationService.GetString("Status_NoInspectors"), MessageType.Info);
                 GUILayout.Space(12);
                 EditorGUILayout.EndHorizontal();
-                return;
             }
 
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
@@ -67,6 +71,9 @@ namespace InspectorManager.UI
             }
 
             EditorGUILayout.EndScrollView();
+
+            // ── 「＋ Inspectorを追加」行 ──
+            DrawAddInspectorRow();
 
             EditorGUILayout.Space(6);
 
@@ -89,6 +96,30 @@ namespace InspectorManager.UI
             EditorGUILayout.EndHorizontal();
         }
 
+        private void DrawAddInspectorRow()
+        {
+            EditorGUILayout.Space(2);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(12);
+
+            var addLabel = _localizationService?.GetString("Button_AddInspector") ?? "+ Add Inspector";
+            if (GUILayout.Button(addLabel, Styles.ActionButton))
+            {
+                var newInspector = InspectorReflection.CreateNewInspector();
+                if (newInspector != null && _rotationLockController != null && _rotationLockController.IsEnabled)
+                {
+                    // Manager経由で追加 → ローテーションに自動参加
+                    EditorApplication.delayCall += () =>
+                    {
+                        _rotationLockController.AddManagedInspector(newInspector);
+                    };
+                }
+            }
+
+            GUILayout.Space(12);
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void DrawInspectorRow(EditorWindow inspector, int index)
         {
             var isLocked = _inspectorService.IsLocked(inspector);
@@ -98,11 +129,13 @@ namespace InspectorManager.UI
             // ハイライト判定
             bool isHighlighted = inspector == _highlightedInspector && EditorApplication.timeSinceStartup < _highlightEndTime;
 
+            // ドラッグオーバー判定
+            bool isDragOver = _dragFromIndex >= 0 && _dragOverIndex == index && _dragFromIndex != index;
+
             // 背景色の計算
             Color bgColor;
             if (isHighlighted)
             {
-                // フラッシュアニメーション（徐々にフェードアウト）
                 float remaining = (float)(_highlightEndTime - EditorApplication.timeSinceStartup);
                 float t = Mathf.Clamp01(remaining / (float)HighlightDuration);
                 bgColor = Color.Lerp(
@@ -112,7 +145,7 @@ namespace InspectorManager.UI
             }
             else if (isExcluded)
             {
-                bgColor = new Color(0.18f, 0.18f, 0.18f, 1f); // より暗い背景
+                bgColor = new Color(0.18f, 0.18f, 0.18f, 1f);
             }
             else
             {
@@ -124,6 +157,24 @@ namespace InspectorManager.UI
                 // 行背景の描画
                 EditorGUI.DrawRect(rect, bgColor);
 
+                // ── ドラッグオーバーインジケーター ──
+                if (isDragOver)
+                {
+                    var lineRect = new Rect(rect.x, rect.y - 1, rect.width, 2);
+                    EditorGUI.DrawRect(lineRect, Styles.Colors.AccentGreen);
+                }
+
+                // ── ハンバーガーアイコン（ドラッグハンドル）──
+                var dragHandleContent = new GUIContent("≡", 
+                    _localizationService?.GetString("Tooltip_DragReorder") ?? "Drag to reorder");
+                var dragHandleRect = GUILayoutUtility.GetRect(dragHandleContent, Styles.IconButton, GUILayout.Width(20));
+                
+                EditorGUIUtility.AddCursorRect(dragHandleRect, MouseCursor.Pan);
+                GUI.Label(dragHandleRect, dragHandleContent, Styles.IconButton);
+
+                // D&Dハンドリング
+                HandleRowDragAndDrop(dragHandleRect, rect, index);
+
                 // ── ロック状態左バー ──
                 var barRect = new Rect(rect.x, rect.y + 2, 3, rect.height - 4);
                 if (isExcluded)
@@ -132,8 +183,6 @@ namespace InspectorManager.UI
                     EditorGUI.DrawRect(barRect, Styles.Colors.DangerRed);
                 else
                     EditorGUI.DrawRect(barRect, Styles.Colors.AccentGreen);
-
-                GUILayout.Space(6);
 
                 // ── ロックアイコン＆トグル ──
                 using (new EditorGUI.DisabledScope(isExcluded))
@@ -154,8 +203,6 @@ namespace InspectorManager.UI
                 {
                     if (isExcluded)
                     {
-                        // 除外バッジ
-                        // 除外バッジ
                         GUILayout.Label("(Ex)", Styles.BadgeExcluded, GUILayout.Width(30));
                     }
                     else
@@ -206,6 +253,19 @@ namespace InspectorManager.UI
                     }
                 }
 
+                // ── 閉じるボタン（除外状態のInspectorのみ、またはローテーションOFF時） ──
+                bool showCloseButton = isExcluded || 
+                    (_rotationLockController == null || !_rotationLockController.IsEnabled);
+                if (showCloseButton)
+                {
+                    var closeContent = new GUIContent("✕", 
+                        _localizationService?.GetString("Tooltip_CloseInspector") ?? "Close this Inspector");
+                    if (GUILayout.Button(closeContent, Styles.MiniButton, GUILayout.Width(24)))
+                    {
+                        inspector.Close();
+                    }
+                }
+
                 // ── フォーカスボタン ──
                 var focusContent = new GUIContent(
                     _localizationService?.GetString("Button_Focus") ?? "Focus",
@@ -218,6 +278,55 @@ namespace InspectorManager.UI
                 GUILayout.Space(4);
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// 行ごとのドラッグ&ドロップ処理
+        /// </summary>
+        private void HandleRowDragAndDrop(Rect handleRect, Rect rowRect, int index)
+        {
+            if (_rotationLockController == null || !_rotationLockController.IsEnabled) return;
+
+            var evt = Event.current;
+
+            switch (evt.type)
+            {
+                case EventType.MouseDrag:
+                    if (handleRect.Contains(evt.mousePosition))
+                    {
+                        _dragFromIndex = index;
+                        DragAndDrop.PrepareStartDrag();
+                        DragAndDrop.SetGenericData("InspectorReorderIndex", index);
+                        DragAndDrop.StartDrag("Reorder Inspector");
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragUpdated:
+                    if (rowRect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    {
+                        _dragOverIndex = index;
+                        DragAndDrop.visualMode = DragAndDropVisualMode.Move;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragPerform:
+                    if (rowRect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    {
+                        DragAndDrop.AcceptDrag();
+                        _rotationLockController.ReorderInspector(_dragFromIndex, index);
+                        _dragFromIndex = -1;
+                        _dragOverIndex = -1;
+                        evt.Use();
+                    }
+                    break;
+
+                case EventType.DragExited:
+                    _dragFromIndex = -1;
+                    _dragOverIndex = -1;
+                    break;
+            }
         }
     }
 }
