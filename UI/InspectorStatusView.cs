@@ -253,10 +253,7 @@ namespace InspectorManager.UI
                     }
                 }
 
-                // ── 閉じるボタン（除外状態のInspectorのみ、またはローテーションOFF時） ──
-                bool showCloseButton = isExcluded || 
-                    (_rotationLockController == null || !_rotationLockController.IsEnabled);
-                if (showCloseButton)
+                // ── 閉じるボタン（常に表示）──
                 {
                     var closeContent = new GUIContent("✕", 
                         _localizationService?.GetString("Tooltip_CloseInspector") ?? "Close this Inspector");

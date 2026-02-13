@@ -18,7 +18,7 @@ namespace InspectorManager.Models
         [SerializeField] private bool _blockFolderSelection = true;
         [SerializeField] private string _language = "ja";
         [SerializeField] private bool _autoFocusOnUpdate = true;
-        [SerializeField] private int _rotationMode = 0;
+        [SerializeField] private int _rotationMode = 1;
 
         // ── ブロック設定: カテゴリA（デフォルト ON）──
         [SerializeField] private bool _blockDefaultAsset = true;

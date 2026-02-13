@@ -43,7 +43,7 @@ namespace InspectorManager.Controllers
         /// <summary>
         /// 現在のローテーションモード
         /// </summary>
-        public RotationMode Mode { get; set; } = RotationMode.Cycle;
+        public RotationMode Mode { get; set; } = RotationMode.History;
 
         public bool IsEnabled
         {
