@@ -175,7 +175,12 @@ namespace InspectorManager.UI
                         $"Type: {entry.ObjectType}\nRecorded: {entry.RecordedAt:HH:mm:ss}"
                     );
 
-                    if (GUILayout.Button(content, EditorStyles.label, GUILayout.ExpandWidth(true)))
+                    // ウィンドウ幅から固定要素の幅を引いた残りをクリック領域に割り当て
+                    // 固定要素: 左パディング(6) + お気に入りアイコン(22) + 型名(60) + 右パディング(4) ≈ 92
+                    float availableWidth = rect.width - 92f;
+                    if (availableWidth < 80f) availableWidth = 80f;
+
+                    if (GUILayout.Button(content, EditorStyles.label, GUILayout.Width(availableWidth)))
                     {
                         if (isValid)
                         {
@@ -199,7 +204,7 @@ namespace InspectorManager.UI
                 EditorGUI.EndDisabledGroup();
 
                 // 型名（キャッシュ済みスタイル使用）
-                GUILayout.Label(entry.ObjectType, Styles.TypeLabel, GUILayout.Width(80));
+                GUILayout.Label(entry.ObjectType, Styles.TypeLabel, GUILayout.Width(60));
 
                 GUILayout.Space(4);
             }

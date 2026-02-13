@@ -247,7 +247,7 @@ namespace InspectorManager.UI
                     
                     var btnContent = new GUIContent(btnText, btnTooltip);
 
-                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(24)))
+                    if (GUILayout.Button(btnContent, Styles.MiniButton, GUILayout.Width(28)))
                     {
                         _rotationLockController.SetExcluded(inspector, !isExcluded);
                     }
@@ -257,7 +257,7 @@ namespace InspectorManager.UI
                 {
                     var closeContent = new GUIContent("✕", 
                         _localizationService?.GetString("Tooltip_CloseInspector") ?? "Close this Inspector");
-                    if (GUILayout.Button(closeContent, Styles.MiniButton, GUILayout.Width(24)))
+                    if (GUILayout.Button(closeContent, Styles.MiniButton, GUILayout.Width(28)))
                     {
                         inspector.Close();
                     }
