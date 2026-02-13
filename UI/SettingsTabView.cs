@@ -212,6 +212,18 @@ namespace InspectorManager.UI
                 _localizationService.GetString("Shortcut_Help"), MessageType.None);
             GUILayout.Space(12);
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(4);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(12);
+            if (GUILayout.Button(_localizationService.GetString("Button_OpenShortcutManager"), Styles.ActionButton))
+            {
+                // Unity Shortcut Manager を開き、Inspector Manager でフィルタ
+                EditorApplication.ExecuteMenuItem("Edit/Shortcuts...");
+            }
+            GUILayout.Space(12);
+            EditorGUILayout.EndHorizontal();
         }
 
         private void DrawMaintenanceSection()

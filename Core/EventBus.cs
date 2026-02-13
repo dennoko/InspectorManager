@@ -145,5 +145,13 @@ namespace InspectorManager.Core
         public UnityEngine.Object DisplayedObject { get; set; }
     }
 
+    /// <summary>
+    /// ローテーション一時停止状態が変更された
+    /// </summary>
+    public struct RotationPauseChangedEvent
+    {
+        public bool IsPaused { get; set; }
+    }
+
     #endregion
 }

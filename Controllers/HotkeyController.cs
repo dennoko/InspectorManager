@@ -40,10 +40,10 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
-        /// 全Inspectorのロックを一括切り替え (Ctrl+Shift+L)
+        /// 全Inspectorのロックを一括切り替え
+        /// デフォルトキーは未割当。Edit > Shortcuts から割り当て可能。
         /// </summary>
-        [Shortcut("Inspector Manager/Toggle All Lock", KeyCode.L,
-            ShortcutModifiers.Action | ShortcutModifiers.Shift)]
+        [Shortcut("Inspector Manager/Toggle All Lock")]
         public static void ToggleAllLock()
         {
             var inspectorService = ServiceLocator.Instance.TryResolve<IInspectorWindowService>();
@@ -58,6 +58,19 @@ namespace InspectorManager.Controllers
             {
                 inspectorService.SetLocked(inspector, targetState);
             }
+        }
+
+        /// <summary>
+        /// ローテーションの一時停止を切り替え
+        /// デフォルトキーは未割当。Edit > Shortcuts から割り当て可能。
+        /// </summary>
+        [Shortcut("Inspector Manager/Toggle Pause")]
+        public static void TogglePause()
+        {
+            var rotationController = ServiceLocator.Instance.TryResolve<RotationLockController>();
+            if (rotationController == null || !rotationController.IsEnabled) return;
+
+            rotationController.IsPaused = !rotationController.IsPaused;
         }
     }
 }

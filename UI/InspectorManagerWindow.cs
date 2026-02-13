@@ -56,6 +56,7 @@ namespace InspectorManager.UI
             EventBus.Instance.Subscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Subscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
             EventBus.Instance.Subscribe<RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
+            EventBus.Instance.Subscribe<RotationPauseChangedEvent>(OnRotationPauseChanged);
             
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged += Repaint;
@@ -69,6 +70,7 @@ namespace InspectorManager.UI
             EventBus.Instance.Unsubscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EventBus.Instance.Unsubscribe<RotationLockStateChangedEvent>(OnRotationLockStateChanged);
             EventBus.Instance.Unsubscribe<RotationUpdateCompletedEvent>(OnRotationUpdateCompleted);
+            EventBus.Instance.Unsubscribe<RotationPauseChangedEvent>(OnRotationPauseChanged);
             
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged -= Repaint;
@@ -111,6 +113,8 @@ namespace InspectorManager.UI
                 _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
                 _rotationLockController.FilterSettings = _settings;
             }
+            // HotkeyControllerからアクセスできるようServiceLocatorに登録
+            ServiceLocator.Instance.Register(_rotationLockController);
             _historyController = new HistoryController(_historyService, _favoritesService, _settings);
 
             // ビューの初期化
@@ -176,35 +180,74 @@ namespace InspectorManager.UI
             {
                 GUILayout.Space(8);
 
-                // ローテーションロック状態表示
+                // ローテーションロック状態表示（3状態: OFF / ON / Paused）
                 bool isRotationEnabled = _rotationLockController?.IsEnabled ?? false;
-                var statusIcon = isRotationEnabled ? "TestPassed" : "TestNormal";
-                var statusText = isRotationEnabled
-                    ? _localizationService.GetString("Status_RotationOn")
-                    : _localizationService.GetString("Status_RotationOff");
+                bool isPaused = isRotationEnabled && (_rotationLockController?.IsPaused ?? false);
+
+                string statusIcon;
+                string statusText;
+                Color headerBg;
+                Color barColor;
+
+                if (!isRotationEnabled)
+                {
+                    statusIcon = "TestNormal";
+                    statusText = _localizationService.GetString("Status_RotationOff");
+                    headerBg = new Color(0.22f, 0.22f, 0.22f, 1f);
+                    barColor = Styles.Colors.TextMuted;
+                }
+                else if (isPaused)
+                {
+                    statusIcon = "TestInconclusive";
+                    statusText = _localizationService.GetString("Status_RotationPaused");
+                    headerBg = new Color(0.36f, 0.30f, 0.14f, 1f);
+                    barColor = Styles.Colors.WarningOrange;
+                }
+                else
+                {
+                    statusIcon = "TestPassed";
+                    statusText = _localizationService.GetString("Status_RotationOn");
+                    headerBg = new Color(0.16f, 0.36f, 0.24f, 1f);
+                    barColor = Styles.Colors.StatusGreen;
+                }
 
                 // カード風ヘッダー
                 var headerRect = EditorGUILayout.BeginHorizontal(Styles.ListItem, GUILayout.Height(36));
                 {
-                    var headerBg = isRotationEnabled
-                        ? new Color(0.16f, 0.36f, 0.24f, 1f)
-                        : new Color(0.22f, 0.22f, 0.22f, 1f);
                     EditorGUI.DrawRect(headerRect, headerBg);
 
                     // 左バー
-                    var barRect = new Rect(headerRect.x, headerRect.y, 3, headerRect.height);
-                    EditorGUI.DrawRect(barRect, isRotationEnabled ? Styles.Colors.StatusGreen : Styles.Colors.TextMuted);
+                    var leftBar = new Rect(headerRect.x, headerRect.y, 3, headerRect.height);
+                    EditorGUI.DrawRect(leftBar, barColor);
 
                     GUILayout.Space(8);
                     GUILayout.Label(EditorGUIUtility.IconContent(statusIcon), GUILayout.Width(20), GUILayout.Height(20));
                     GUILayout.Label(statusText, Styles.SectionHeader);
                     GUILayout.FlexibleSpace();
 
+                    // 一時停止ボタン（ローテーションON時のみ表示）
+                    if (isRotationEnabled && _rotationLockController != null)
+                    {
+                        var pauseIcon = isPaused ? "PlayButton" : "PauseButton";
+                        var pauseTooltip = isPaused
+                            ? _localizationService.GetString("Tooltip_ResumeRotation")
+                            : _localizationService.GetString("Tooltip_PauseRotation");
+                        if (GUILayout.Button(
+                            new GUIContent(EditorGUIUtility.IconContent(pauseIcon).image, pauseTooltip),
+                            Styles.IconButton, GUILayout.Width(22), GUILayout.Height(22)))
+                        {
+                            _rotationLockController.IsPaused = !isPaused;
+                        }
+                        GUILayout.Space(4);
+                    }
+
                     // ON/OFFトグル
                     var newEnabled = GUILayout.Toggle(isRotationEnabled, "", GUILayout.Width(16));
                     if (newEnabled != isRotationEnabled && _rotationLockController != null)
                     {
                         _rotationLockController.IsEnabled = newEnabled;
+                        // ONにした時は一時停止を解除
+                        if (newEnabled) _rotationLockController.IsPaused = false;
                     }
 
                     GUILayout.Space(6);
@@ -272,6 +315,7 @@ namespace InspectorManager.UI
         private void OnFavoritesUpdated(FavoritesUpdatedEvent evt) => Repaint();
         private void OnInspectorLockChanged(InspectorLockChangedEvent evt) => Repaint();
         private void OnRotationLockStateChanged(RotationLockStateChangedEvent evt) => Repaint();
+        private void OnRotationPauseChanged(RotationPauseChangedEvent evt) => Repaint();
         
         private void OnRotationUpdateCompleted(RotationUpdateCompletedEvent evt)
         {

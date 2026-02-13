@@ -65,6 +65,23 @@ namespace InspectorManager.Controllers
         public bool AutoFocusOnUpdate { get; set; }
         public bool BlockFolderSelection { get; set; }
 
+        private bool _isPaused;
+        /// <summary>
+        /// ローテーションの一時停止。ONのまま更新だけを止める
+        /// </summary>
+        public bool IsPaused
+        {
+            get => _isPaused;
+            set
+            {
+                if (_isPaused != value)
+                {
+                    _isPaused = value;
+                    EventBus.Instance.Publish(new RotationPauseChangedEvent { IsPaused = _isPaused });
+                }
+            }
+        }
+
         /// <summary>
         /// ブロックフィルタリング用の設定参照
         /// </summary>
@@ -213,6 +230,7 @@ namespace InspectorManager.Controllers
         private void OnSelectionChanged()
         {
             if (!_isEnabled) return;
+            if (_isPaused) return;
             if (_isUpdating) return;
 
             var newSelection = Selection.activeObject;
