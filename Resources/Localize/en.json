@@ -79,5 +79,9 @@
     "Toast_FavoriteRemoved": "Removed from Favorites",
     "Button_AddInspector": "+ Add Inspector",
     "Tooltip_DragReorder": "Drag to reorder",
-    "Tooltip_CloseInspector": "Close this Inspector"
+    "Tooltip_CloseInspector": "Close this Inspector",
+    "Section_RotationOrder": "── Rotation Order ──",
+    "Section_Excluded": "── Excluded ──",
+    "History_Latest": "Latest",
+    "History_Previous": "{0} Prev"
 }

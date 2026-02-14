@@ -83,6 +83,11 @@ namespace InspectorManager.UI
             if (EditorApplication.timeSinceStartup - _lastUpdateTime < UpdateInterval) return;
             _lastUpdateTime = EditorApplication.timeSinceStartup;
 
+            if (_rotationLockController != null && _rotationLockController.IsEnabled)
+            {
+                _rotationLockController.SyncInspectorList();
+            }
+
             RefreshOverlays();
         }
 
@@ -112,11 +117,12 @@ namespace InspectorManager.UI
 
             for (int i = 0; i < inspectors.Count; i++)
             {
-                UpdateOverlay(inspectors[i], i);
+                // 固定番号（ウィンドウ順）を表示
+                UpdateOverlay(inspectors[i], i + 1);
             }
         }
 
-        private void UpdateOverlay(EditorWindow inspector, int index)
+        private void UpdateOverlay(EditorWindow inspector, object index)
         {
             if (inspector == null) return;
             var root = inspector.rootVisualElement;
@@ -144,10 +150,18 @@ namespace InspectorManager.UI
             if (button == null) return;
 
             // テキスト更新
-            string statusText = isLocked 
-                ? _localizationService.GetString("Overlay_Locked") 
-                : _localizationService.GetString("Overlay_Unlocked");
-            button.text = _localizationService.GetString("Overlay_Format", index + 1, statusText);
+            string statusText;
+            if (_rotationLockController != null && _rotationLockController.IsExcluded(inspector))
+            {
+                statusText = _localizationService.GetString("Status_Excluded");
+            }
+            else
+            {
+                statusText = isLocked 
+                    ? _localizationService.GetString("Overlay_Locked") 
+                    : _localizationService.GetString("Overlay_Unlocked");
+            }
+            button.text = _localizationService.GetString("Overlay_Format", index, statusText);
 
             // フラッシュ中でなければ通常色を適用
             if (!isFlashing)

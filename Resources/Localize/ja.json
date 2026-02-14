@@ -79,5 +79,9 @@
     "Toast_FavoriteRemoved": "お気に入りから削除しました",
     "Button_AddInspector": "＋ Inspectorを追加",
     "Tooltip_DragReorder": "ドラッグで並び替え",
-    "Tooltip_CloseInspector": "このInspectorを閉じる"
+    "Tooltip_CloseInspector": "このInspectorを閉じる",
+    "Section_RotationOrder": "── ローテーション順序 ──",
+    "Section_Excluded": "── 除外中 ──",
+    "History_Latest": "最新",
+    "History_Previous": "{0}つ前"
 }

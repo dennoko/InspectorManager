@@ -108,6 +108,11 @@ namespace InspectorManager.Controllers
             return _rotationOrder.IndexOf(inspector);
         }
 
+        public List<EditorWindow> GetRotationOrder()
+        {
+            return new List<EditorWindow>(_rotationOrder);
+        }
+
         public int CurrentTargetIndex
         {
             get
@@ -176,10 +181,80 @@ namespace InspectorManager.Controllers
             return _exclusionManager.IsExcluded(inspector);
         }
 
+        public List<EditorWindow> GetExcludedInspectors()
+        {
+            // _exclusionManager doesn't expose list directly, so filter from all inspectors
+            // Or better, let ExclusionManager expose it? 
+            // Since ExclusionManager is private field here, we can just rely on IsExcluded check against all inspectors
+            // But for efficiency, let's ask _inspectorService for all, then filter.
+            var all = _inspectorService.GetAllInspectors();
+            var excluded = new List<EditorWindow>();
+            foreach(var window in all)
+            {
+                if (IsExcluded(window))
+                {
+                    excluded.Add(window);
+                }
+            }
+            return excluded;
+        }
+
+        public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWindow> excluded, out List<EditorWindow> unmanaged)
+        {
+            var all = _inspectorService.GetAllInspectors();
+            rotation = new List<EditorWindow>(_rotationOrder);
+            excluded = new List<EditorWindow>();
+            unmanaged = new List<EditorWindow>();
+
+            foreach (var w in all)
+            {
+                if (IsExcluded(w))
+                {
+                    excluded.Add(w);
+                }
+                else if (!_rotationOrder.Contains(w))
+                {
+                    unmanaged.Add(w);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 全Inspectorリスト内でのインデックス（1始まり）を取得（固定番号用）
+        /// </summary>
+        public int GetWindowIndex(EditorWindow inspector)
+        {
+            var all = _inspectorService.GetAllInspectors();
+            int index = -1;
+            // リスト内でインスタンスを検索
+            for(int i=0; i<all.Count; i++)
+            {
+                if(all[i] == inspector)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            return index >= 0 ? index + 1 : -1;
+        }
+
+        // 履歴モード時の役割ラベルを取得
+        public string GetInspectionRoleLabel(EditorWindow inspector)
+        {
+            if (Mode != RotationMode.History) return null;
+            
+            int index = _rotationOrder.IndexOf(inspector);
+            if (index < 0) return null;
+
+            // 0 = 最新, 1 = 1つ前, 2 = 2つ前 ...
+            if (index == 0) return "History_Latest";
+            return "History_Previous"; // Needs format arg
+        }
+
         /// <summary>
         /// Inspector数の変更を検出して対応
         /// </summary>
-        private void SyncInspectorList()
+        public void SyncInspectorList()
         {
             var currentInspectors = _inspectorService.GetAllInspectors();
             
