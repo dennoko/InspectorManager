@@ -25,7 +25,9 @@ Each tab displays a fixed position in the selection history.
 | Inspector 3 | Two selections ago |
 
 > **Use Case**: Ideal when comparing parent and child objects side by side.
-> Since tab positions are fixed, you always know "tab 1 is the latest," making it intuitive to compare properties across multiple objects.
+> **Use Case**: Ideal when comparing parent and child objects side by side.
+> Each tab's role (Latest, Previous...) is fixed, so you always know "the top of the list is the latest," making it intuitive to compare properties across multiple objects.
+> The Inspector window number itself (#1, #2...) is fixed. Which window acts as "latest" is determined by its order in the Inspector Manager list.
 
 #### Cycle Mode
 
@@ -50,10 +52,11 @@ While rotation is active, click the pause button to pause. While paused, selecti
 The Status tab shows all currently open Inspector windows.
 
 Each row includes:
-- **Drag Handle**: Drag & drop to reorder rotation order
+Each row includes:
+- **Drag Handle**: Drag & drop to reorder rotation order (roles)
 - **Lock Icon**: Click to toggle lock/unlock
-- **Inspector Number**: Window identifier
-- **Rotation Badge**: Shows next update target (NEXT) or order number
+- **Inspector Number**: Fixed window identifier
+- **Rotation Badge**: Shows current target (▶) or order
 - **Displayed Object Name**: Currently inspected object
 - **Exclude/Include Button**: Exclude from / include in rotation
 - **Close Button**: Close the Inspector window
@@ -78,7 +81,7 @@ Click the "✕" button on any row to close that Inspector.
 
 Drag the handle icon on the left side of each row to change the rotation order.
 
-> **Use Case**: In History mode, Inspector 1 = latest, so place the most visible Inspector as #1 for comfort.
+> **Use Case**: In History mode, "Top of list = Latest", so place the most visible Inspector (e.g. #1) at the top of the list for comfort.
 
 ### Exclusion
 
