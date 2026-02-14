@@ -103,7 +103,7 @@ namespace InspectorManager.UI
             _settings = result.Settings;
 
             // ウィンドウタイトル更新
-            titleContent = new GUIContent(_localizationService.GetString("Window_Title"));
+            titleContent = new GUIContent("Inspector Manager");
 
             // コントローラーの初期化
             _rotationLockController = new RotationLockController(_inspectorService, _persistenceService);

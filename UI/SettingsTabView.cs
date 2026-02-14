@@ -96,7 +96,7 @@ namespace InspectorManager.UI
                 {
                     ls.CurrentLanguage = newLang;
                 }
-                OnTitleUpdateRequired?.Invoke(_localizationService.GetString("Window_Title"));
+                OnTitleUpdateRequired?.Invoke("Inspector Manager");
             }
             GUILayout.Space(12);
             EditorGUILayout.EndHorizontal();
