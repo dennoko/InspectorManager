@@ -25,7 +25,6 @@ Each tab displays a fixed position in the selection history.
 | Inspector 3 | Two selections ago |
 
 > **Use Case**: Ideal when comparing parent and child objects side by side.
-> **Use Case**: Ideal when comparing parent and child objects side by side.
 > Each tab's role (Latest, Previous...) is fixed, so you always know "the top of the list is the latest," making it intuitive to compare properties across multiple objects.
 > The Inspector window number itself (#1, #2...) is fixed. Which window acts as "latest" is determined by its order in the Inspector Manager list.
 
