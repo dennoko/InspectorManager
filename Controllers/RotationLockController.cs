@@ -373,7 +373,7 @@ namespace InspectorManager.Controllers
                             DisplayedObject = newSelection
                         });
 
-                        if (AutoFocusOnUpdate)
+                        if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
                         {
                             targetInspector.Focus();
                         }
@@ -404,7 +404,7 @@ namespace InspectorManager.Controllers
                         DisplayedObject = newSelection
                     });
 
-                    if (AutoFocusOnUpdate)
+                    if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
                     {
                         targetInspector.Focus();
                     }
@@ -524,7 +524,7 @@ namespace InspectorManager.Controllers
                     DisplayedObject = newSelection
                 });
 
-                if (AutoFocusOnUpdate)
+                if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
                 {
                     _rotationOrder[0].Focus();
                 }
@@ -537,6 +537,13 @@ namespace InspectorManager.Controllers
             {
                 _isUpdating = false;
             }
+        }
+
+        private bool IsFocusingHierarchyOrProject()
+        {
+            if (EditorWindow.focusedWindow == null) return false;
+            var windowType = EditorWindow.focusedWindow.GetType().Name;
+            return windowType == "SceneHierarchyWindow" || windowType == "ProjectBrowser";
         }
 
         private void LoadSettings()

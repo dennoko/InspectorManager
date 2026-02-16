@@ -73,7 +73,7 @@ namespace InspectorManager.Services
                 if (match.Groups.Count >= 3)
                 {
                     string key = match.Groups[1].Value;
-                    string value = match.Groups[2].Value;
+                    string value = match.Groups[2].Value.Replace("\\n", "\n");
                     _translations[key] = value;
                 }
             }
