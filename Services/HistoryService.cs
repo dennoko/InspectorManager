@@ -16,7 +16,11 @@ namespace InspectorManager.Services
         private readonly IPersistenceService _persistence;
         private int _currentIndex = -1;
         private int _maxHistoryCount = 50;
-        private bool _isNavigating;
+
+        // 戻る/進むで選択したオブジェクト。Selection.selectionChanged は遅延発火するため、
+        // スコープ付きフラグでは記録を抑止できない（かつては GoBack() の直後に
+        // 同じオブジェクトが再記録され、進む履歴が切り捨てられていた）。
+        private UnityEngine.Object _navigationTarget;
 
         private const string HistoryKey = "SelectionHistory";
 
@@ -54,7 +58,14 @@ namespace InspectorManager.Services
         public void RecordSelection(UnityEngine.Object obj)
         {
             if (obj == null) return;
-            if (_isNavigating) return;
+
+            // 戻る/進むによる選択は新規の履歴として記録しない
+            if (_navigationTarget != null && obj == _navigationTarget)
+            {
+                _navigationTarget = null;
+                return;
+            }
+            _navigationTarget = null;
 
             var entry = new HistoryEntry(obj);
 
@@ -102,52 +113,37 @@ namespace InspectorManager.Services
         {
             if (!CanGoBack) return null;
 
-            _isNavigating = true;
-            try
-            {
-                _currentIndex--;
-                var entry = _history[_currentIndex];
-
-                // オブジェクトを選択
-                var obj = entry.GetObject();
-                if (obj != null)
-                {
-                    UnityEditor.Selection.activeObject = obj;
-                }
-
-                EventBus.Instance.Publish(new HistoryUpdatedEvent());
-                return entry;
-            }
-            finally
-            {
-                _isNavigating = false;
-            }
+            _currentIndex--;
+            return NavigateToCurrent();
         }
 
         public HistoryEntry GoForward()
         {
             if (!CanGoForward) return null;
 
-            _isNavigating = true;
-            try
-            {
-                _currentIndex++;
-                var entry = _history[_currentIndex];
+            _currentIndex++;
+            return NavigateToCurrent();
+        }
 
-                // オブジェクトを選択
-                var obj = entry.GetObject();
-                if (obj != null)
-                {
-                    UnityEditor.Selection.activeObject = obj;
-                }
+        /// <summary>
+        /// _currentIndex が指すエントリを選択する。
+        /// この選択はナビゲーション由来であることを通知し、履歴には積まない。
+        /// </summary>
+        private HistoryEntry NavigateToCurrent()
+        {
+            var entry = _history[_currentIndex];
+            var obj = entry.GetObject();
 
-                EventBus.Instance.Publish(new HistoryUpdatedEvent());
-                return entry;
-            }
-            finally
+            _navigationTarget = obj;
+            EventBus.Instance.Publish(new HistoryNavigationEvent { Target = obj });
+
+            if (obj != null)
             {
-                _isNavigating = false;
+                UnityEditor.Selection.activeObject = obj;
             }
+
+            EventBus.Instance.Publish(new HistoryUpdatedEvent());
+            return entry;
         }
 
         private void TrimHistory()

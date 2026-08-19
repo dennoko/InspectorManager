@@ -46,6 +46,10 @@ namespace InspectorManager.Controllers
         // 最後に認識した選択（無限ループ防止）
         private UnityEngine.Object[] _lastKnownSelection;
 
+        // 履歴の戻る/進むで選択されたオブジェクト。
+        // これによる選択変更はローテーションを進めず、現在の表示を差し替えるだけにする
+        private UnityEngine.Object _navigationTarget;
+
         // delayCallタイムアウト管理
         private double _updateStartTime;
         private const double UpdateTimeout = 1.0;
@@ -184,6 +188,7 @@ namespace InspectorManager.Controllers
             LoadSettings();
             RestoreRuntimeState();
             Selection.selectionChanged += OnSelectionChanged;
+            EventBus.Instance.Subscribe<HistoryNavigationEvent>(OnHistoryNavigation);
         }
 
         public void Dispose()
@@ -192,6 +197,7 @@ namespace InspectorManager.Controllers
             _disposed = true;
 
             Selection.selectionChanged -= OnSelectionChanged;
+            EventBus.Instance.Unsubscribe<HistoryNavigationEvent>(OnHistoryNavigation);
             _rotationOrder.Clear();
             _knownInspectors.Clear();
             _userUnlocked.Clear();
@@ -483,6 +489,12 @@ namespace InspectorManager.Controllers
                 return;
             }
 
+            // 履歴ナビゲーション由来かどうかを判定（フラグは1回の選択変更で消費する）
+            bool isNavigation = _navigationTarget != null
+                && newSelection.Length == 1
+                && newSelection[0] == _navigationTarget;
+            _navigationTarget = null;
+
             if (IsSameSelection(newSelection, _lastKnownSelection)) return;
             _lastKnownSelection = newSelection;
 
@@ -491,12 +503,17 @@ namespace InspectorManager.Controllers
 
             if (Mode == RotationMode.History)
             {
-                PerformHistoryUpdate(newSelection);
+                PerformHistoryUpdate(newSelection, isNavigation);
             }
             else
             {
-                PerformRotationUpdate(newSelection);
+                PerformRotationUpdate(newSelection, isNavigation);
             }
+        }
+
+        private void OnHistoryNavigation(HistoryNavigationEvent evt)
+        {
+            _navigationTarget = evt.Target;
         }
 
         /// <summary>
@@ -515,9 +532,27 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// ローテーション順序を1つ進める（更新済みのInspectorを末尾へ回す）
+        /// </summary>
+        private void AdvanceRotation(EditorWindow updated)
+        {
+            // 非同期経路では待っている間にリストが変化しうるため、
+            // 先頭が想定どおりの場合のみ回す（誤って別のInspectorを外さない）
+            if (_rotationOrder.Count == 0) return;
+            if (_rotationOrder[0] != updated) return;
+
+            _rotationOrder.RemoveAt(0);
+            _rotationOrder.Add(updated);
+            SaveRuntimeState();
+        }
+
+        /// <summary>
         /// 選択変更時のローテーション更新処理
         /// </summary>
-        private void PerformRotationUpdate(UnityEngine.Object[] newSelection)
+        /// <param name="isNavigation">
+        /// 履歴の戻る/進む由来の場合 true。ローテーションを進めず表示だけ差し替える。
+        /// </param>
+        private void PerformRotationUpdate(UnityEngine.Object[] newSelection, bool isNavigation = false)
         {
             if (_rotationOrder.Count == 0) return;
 
@@ -534,8 +569,7 @@ namespace InspectorManager.Controllers
                     bool success = InspectorReflection.SetInspectedObjects(targetInspector, newSelection);
                     if (success)
                     {
-                        _rotationOrder.RemoveAt(0);
-                        _rotationOrder.Add(targetInspector);
+                        if (!isNavigation) AdvanceRotation(targetInspector);
                         _isUpdating = false;
 
                         EventBus.Instance.Publish(new RotationUpdateCompletedEvent
@@ -567,11 +601,7 @@ namespace InspectorManager.Controllers
                     _inspectorService.SetLocked(targetInspector, true);
                     _pendingUnlockTarget = null;
 
-                    if (_rotationOrder.Count > 0)
-                    {
-                        _rotationOrder.RemoveAt(0);
-                        _rotationOrder.Add(targetInspector);
-                    }
+                    if (!isNavigation) AdvanceRotation(targetInspector);
 
                     EventBus.Instance.Publish(new RotationUpdateCompletedEvent
                     {
@@ -665,7 +695,10 @@ namespace InspectorManager.Controllers
         /// 履歴モードのカスケード更新処理
         /// 各Inspectorに固定位置の履歴を表示する
         /// </summary>
-        private void PerformHistoryUpdate(UnityEngine.Object[] newSelection)
+        /// <param name="isNavigation">
+        /// 履歴の戻る/進む由来の場合 true。履歴に積まず先頭を差し替える。
+        /// </param>
+        private void PerformHistoryUpdate(UnityEngine.Object[] newSelection, bool isNavigation = false)
         {
             if (_rotationOrder.Count == 0) return;
 
@@ -678,7 +711,7 @@ namespace InspectorManager.Controllers
             {
                 Debug.LogWarning("[InspectorManager] Direct update not available, falling back to Cycle mode.");
                 _selectionHistory.Clear();
-                PerformRotationUpdate(newSelection);
+                PerformRotationUpdate(newSelection, isNavigation);
                 return;
             }
 
@@ -687,8 +720,17 @@ namespace InspectorManager.Controllers
 
             try
             {
-                // 履歴の先頭に新しい選択を追加
-                _selectionHistory.Insert(0, newSelection);
+                // 履歴の先頭に新しい選択を追加。
+                // ただし戻る/進む由来の場合は積まずに先頭を差し替える
+                // （同じオブジェクトが重複し、最も古い履歴が押し出されるのを防ぐ）
+                if (isNavigation && _selectionHistory.Count > 0)
+                {
+                    _selectionHistory[0] = newSelection;
+                }
+                else
+                {
+                    _selectionHistory.Insert(0, newSelection);
+                }
 
                 // 破棄済みオブジェクトを取り除いて詰める。
                 // 詰めずにスキップすると、そのInspectorだけ古い表示が残り

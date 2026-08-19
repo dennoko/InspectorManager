@@ -146,6 +146,17 @@ namespace InspectorManager.Core
     }
 
     /// <summary>
+    /// 履歴の戻る/進むによって選択が変更された（新規の選択操作ではない）。
+    /// Selection.selectionChanged は遅延発火するため、スコープ付きフラグでは
+    /// ナビゲーション由来かどうかを判定できない。対象オブジェクトを載せて
+    /// 通知し、受け手は次の選択変更がそれと一致するかで判定する。
+    /// </summary>
+    public struct HistoryNavigationEvent
+    {
+        public UnityEngine.Object Target { get; set; }
+    }
+
+    /// <summary>
     /// ローテーション一時停止状態が変更された
     /// </summary>
     public struct RotationPauseChangedEvent
