@@ -311,6 +311,7 @@ namespace InspectorManager.UI
             }
 
             _rotationLockController?.ApplySettings(_settings);
+            _historyController?.ApplySettings(_settings);
         }
 
         // イベントハンドラー

@@ -37,7 +37,7 @@
     "Block_Shader": "Shaders",
     "Block_Font": "Fonts",
     "Settings_Rotation": "Rotation Settings",
-    "Settings_AutoFocus": "Auto Focus Inspector on Update",
+    "Settings_AutoFocus": "Auto Focus Inspector on Update (except from Hierarchy/Project)",
     "Settings_RotationMode": "Update Mode",
     "RotationMode_Cycle": "Cycle (rotate in order)",
     "RotationMode_History": "History (fixed position)",

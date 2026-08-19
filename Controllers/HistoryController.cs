@@ -12,7 +12,9 @@ namespace InspectorManager.Controllers
     {
         private readonly IHistoryService _historyService;
         private readonly IFavoritesService _favoritesService;
-        private readonly InspectorManagerSettings _settings;
+
+        // 「すべてリセット」で設定インスタンスごと差し替わるため readonly にはできない
+        private InspectorManagerSettings _settings;
 
         private bool _isRecordingEnabled = true;
 
@@ -33,6 +35,35 @@ namespace InspectorManager.Controllers
 
             // 選択変更イベントを購読
             Selection.selectionChanged += OnSelectionChanged;
+
+            // アセットの追加/削除/移動で履歴・お気に入りのエントリが無効になりうる
+            EditorApplication.projectChanged += OnProjectChanged;
+
+            AutoCleanIfEnabled();
+        }
+
+        /// <summary>
+        /// 設定インスタンスの差し替えに追従する
+        /// </summary>
+        public void ApplySettings(InspectorManagerSettings settings)
+        {
+            if (settings == null) return;
+            _settings = settings;
+        }
+
+        private void OnProjectChanged()
+        {
+            AutoCleanIfEnabled();
+        }
+
+        /// <summary>
+        /// 「無効なエントリを自動削除」が有効なら、失われたオブジェクトを指す
+        /// 履歴・お気に入りを取り除く。
+        /// </summary>
+        private void AutoCleanIfEnabled()
+        {
+            if (_settings == null || !_settings.AutoCleanInvalidHistory) return;
+            CleanupAll();
         }
 
         private bool _disposed;
@@ -42,11 +73,13 @@ namespace InspectorManager.Controllers
             if (_disposed) return;
             _disposed = true;
             Selection.selectionChanged -= OnSelectionChanged;
+            EditorApplication.projectChanged -= OnProjectChanged;
         }
 
         private void OnSelectionChanged()
         {
             if (!_isRecordingEnabled) return;
+            if (_settings == null) return;
 
             var activeObject = Selection.activeObject;
             if (activeObject == null) return;
