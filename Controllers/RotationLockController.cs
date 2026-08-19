@@ -285,7 +285,52 @@ namespace InspectorManager.Controllers
             _preRotationLocked.Clear();
             _preRotationLocked.AddRange(WindowStateStore.Load(StateKeyPreRotationLocked, inspectors));
 
+            // セッション状態が無い（エディタ再起動、またはウィンドウを閉じて開き直した）
+            // 場合は、ローテーションを一から初期化する。
+            // ここで初期化しないと、アンロック状態のInspectorが
+            // 「ユーザーが手動で解除したもの」と誤判定されてしまう。
+            if (_isEnabled && _knownInspectors.Count == 0)
+            {
+                InitializeRotation();
+                return;
+            }
+
             _lastKnownSelection = Selection.objects;
+        }
+
+        /// <summary>
+        /// Inspector Manager ウィンドウが閉じられたときに呼ぶ。
+        /// ローテーションを休止し、Inspectorのロック状態を開始前へ戻す。
+        ///
+        /// ウィンドウを閉じると Selection の購読が外れてローテーションは止まるが、
+        /// 従来は全Inspectorがロックされたまま取り残され、
+        /// 「Inspectorが一切更新されない」状態の原因が分からなくなっていた。
+        ///
+        /// OnDisable の時点でコントローラは破棄済みのため、
+        /// セッション状態から直接復元する静的メソッドとして提供する。
+        /// 設定上の有効フラグは変更しないので、再度ウィンドウを開けば復帰する。
+        /// </summary>
+        public static void SuspendForWindowClose(IInspectorWindowService inspectorService)
+        {
+            if (inspectorService == null || !inspectorService.IsAvailable) return;
+
+            var inspectors = inspectorService.GetAllInspectors();
+
+            // ローテーションが一度も動いていなければ何もしない
+            var known = WindowStateStore.Load(StateKeyKnown, inspectors);
+            if (known.Count == 0) return;
+
+            var preLocked = WindowStateStore.Load(StateKeyPreRotationLocked, inspectors);
+            foreach (var inspector in inspectors)
+            {
+                inspectorService.SetLocked(inspector, preLocked.Contains(inspector));
+            }
+
+            WindowStateStore.Clear(StateKeyRotationOrder);
+            WindowStateStore.Clear(StateKeyKnown);
+            WindowStateStore.Clear(StateKeyUserUnlocked);
+            WindowStateStore.Clear(StateKeyExcluded);
+            WindowStateStore.Clear(StateKeyPreRotationLocked);
         }
 
         /// <summary>

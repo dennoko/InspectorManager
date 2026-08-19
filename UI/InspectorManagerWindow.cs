@@ -89,6 +89,15 @@ namespace InspectorManager.UI
             _isInitialized = false;
         }
 
+        /// <summary>
+        /// ウィンドウが実際に閉じられたときのみ呼ばれる（ドメインリロードでは呼ばれない）。
+        /// ローテーション中のInspectorがロックされたまま取り残されないようにする。
+        /// </summary>
+        private void OnDestroy()
+        {
+            RotationLockController.SuspendForWindowClose(_inspectorService);
+        }
+
         private void Initialize()
         {
             if (_isInitialized) return;
