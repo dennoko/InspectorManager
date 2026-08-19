@@ -59,7 +59,7 @@ Assets/Editor/InspectorManager/
 │   ├── InspectorReflection  # Unity内部API操作
 │   ├── EventBus             # イベント通知
 │   ├── ServiceLocator       # DI管理
-│   └── LifecycleManager     # ライフサイクル管理
+│   └── WindowStateStore     # セッション状態の保存/復元
 ├── Models/                  # データモデル
 ├── Services/                # ビジネスロジック
 ├── Controllers/             # 機能制御
