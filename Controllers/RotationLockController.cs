@@ -37,6 +37,12 @@ namespace InspectorManager.Controllers
         // ローテーション終了時にこの状態へ戻す
         private readonly List<EditorWindow> _preRotationLocked = new List<EditorWindow>();
 
+        // 各Inspectorに最後に割り当てた選択集合。
+        // SetObjectsLockedByThisTracker + ForceRebuild は重い操作なので、
+        // 内容が変わっていないInspectorは作り直さないための比較に使う
+        private readonly Dictionary<EditorWindow, UnityEngine.Object[]> _lastAssigned =
+            new Dictionary<EditorWindow, UnityEngine.Object[]>();
+
         // 履歴モード用の選択履歴（1エントリ＝1回分の選択。複数選択もそのまま保持する）
         private readonly List<UnityEngine.Object[]> _selectionHistory = new List<UnityEngine.Object[]>();
 
@@ -93,6 +99,8 @@ namespace InspectorManager.Controllers
                         _rotationOrder.Clear();
                         _knownInspectors.Clear();
                         _userUnlocked.Clear();
+                        _lastAssigned.Clear();
+                        _selectionHistory.Clear();
                         _exclusionManager.Clear();
                         SaveRuntimeState();
                     }
@@ -202,6 +210,7 @@ namespace InspectorManager.Controllers
             _knownInspectors.Clear();
             _userUnlocked.Clear();
             _preRotationLocked.Clear();
+            _lastAssigned.Clear();
             _exclusionManager.Clear();
             _pendingUnlockTarget = null;
             _isUpdating = false;
@@ -213,6 +222,8 @@ namespace InspectorManager.Controllers
             _userUnlocked.Clear();
             _knownInspectors.Clear();
             _preRotationLocked.Clear();
+            _lastAssigned.Clear();
+            _selectionHistory.Clear();
             _exclusionManager.CleanupInvalid();
 
             var inspectors = _inspectorService.GetAllInspectors();
@@ -433,6 +444,7 @@ namespace InspectorManager.Controllers
             _knownInspectors.RemoveAll(i => !currentInspectors.Contains(i));
             _userUnlocked.RemoveAll(i => !currentInspectors.Contains(i));
             _exclusionManager.CleanupInvalid();
+            CleanupLastAssigned(currentInspectors);
 
             if (_pendingUnlockTarget != null && !currentInspectors.Contains(_pendingUnlockTarget))
             {
@@ -489,6 +501,51 @@ namespace InspectorManager.Controllers
             }
 
             SaveRuntimeState();
+        }
+
+        /// <summary>
+        /// 閉じられたInspectorを割り当てキャッシュから除去する
+        /// </summary>
+        private void CleanupLastAssigned(IReadOnlyList<EditorWindow> currentInspectors)
+        {
+            if (_lastAssigned.Count == 0) return;
+
+            List<EditorWindow> stale = null;
+            foreach (var kvp in _lastAssigned)
+            {
+                if (currentInspectors.Contains(kvp.Key)) continue;
+                (stale ?? (stale = new List<EditorWindow>())).Add(kvp.Key);
+            }
+
+            if (stale == null) return;
+            foreach (var inspector in stale)
+            {
+                _lastAssigned.Remove(inspector);
+            }
+        }
+
+        /// <summary>
+        /// Inspectorに選択集合を割り当てる。
+        /// 既に同じ内容を表示している場合は ForceRebuild を避けるためスキップする。
+        /// </summary>
+        private bool AssignToInspector(EditorWindow inspector, UnityEngine.Object[] objects)
+        {
+            if (inspector == null || objects == null || objects.Length == 0) return false;
+
+            if (_lastAssigned.TryGetValue(inspector, out var current)
+                && IsSameSelection(current, objects))
+            {
+                return true;
+            }
+
+            if (InspectorReflection.SetInspectedObjects(inspector, objects))
+            {
+                _lastAssigned[inspector] = objects;
+                return true;
+            }
+
+            _lastAssigned.Remove(inspector);
+            return false;
         }
 
         /// <summary>
@@ -611,7 +668,7 @@ namespace InspectorManager.Controllers
                 // 新方式: 直接更新を試行
                 if (InspectorReflection.IsDirectUpdateAvailable)
                 {
-                    bool success = InspectorReflection.SetInspectedObjects(targetInspector, newSelection);
+                    bool success = AssignToInspector(targetInspector, newSelection);
                     if (success)
                     {
                         if (!isNavigation) AdvanceRotation(targetInspector);
@@ -636,6 +693,8 @@ namespace InspectorManager.Controllers
                 // 一時アンロック中であることを記録し、SyncInspectorList が
                 // 「ユーザーによるアンロック」と誤検出しないようにする
                 _pendingUnlockTarget = targetInspector;
+                // アンロックするとUnity側が表示対象を差し替えるためキャッシュは無効
+                _lastAssigned.Remove(targetInspector);
                 _inspectorService.SetLocked(targetInspector, false);
                 targetInspector.Repaint();
 
@@ -810,7 +869,9 @@ namespace InspectorManager.Controllers
                 {
                     if (i >= _selectionHistory.Count) break;
 
-                    InspectorReflection.SetInspectedObjects(_rotationOrder[i], _selectionHistory[i]);
+                    // 履歴がずれていないタブまで毎回作り直すと描画が引っかかるため、
+                    // AssignToInspector 側で内容が同じ場合はスキップする
+                    AssignToInspector(_rotationOrder[i], _selectionHistory[i]);
                 }
 
                 // 最初のInspectorの更新完了を通知
