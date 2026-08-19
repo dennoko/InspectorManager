@@ -14,7 +14,10 @@ namespace InspectorManager.UI
         private readonly IFavoritesService _favoritesService;
         private readonly ILocalizationService _localizationService;
         private Vector2 _scrollPosition;
-        private int _dragFromIndex = -1;
+
+        // ドラッグ中にリスト構成が変わってもずれないよう、
+        // インデックスではなくエントリ参照で保持する
+        private FavoriteEntry _dragFromEntry;
 
         public FavoritesListView(IFavoritesService favoritesService, ILocalizationService localizationService)
         {
@@ -73,7 +76,7 @@ namespace InspectorManager.UI
             // ドラッグ終了処理
             if (Event.current.type == EventType.DragExited)
             {
-                _dragFromIndex = -1;
+                _dragFromEntry = null;
             }
         }
 
@@ -142,7 +145,7 @@ namespace InspectorManager.UI
                 case EventType.MouseDrag:
                     if (rect.Contains(evt.mousePosition))
                     {
-                        _dragFromIndex = index;
+                        _dragFromEntry = entry;
 
                         DragAndDrop.PrepareStartDrag();
                         var obj = entry.GetObject();
@@ -150,14 +153,14 @@ namespace InspectorManager.UI
                         {
                             DragAndDrop.objectReferences = new Object[] { obj };
                         }
-                        DragAndDrop.SetGenericData("FavoriteIndex", index);
+                        DragAndDrop.SetGenericData("FavoriteEntry", entry);
                         DragAndDrop.StartDrag(entry.DisplayName);
                         evt.Use();
                     }
                     break;
 
                 case EventType.DragUpdated:
-                    if (rect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    if (rect.Contains(evt.mousePosition) && _dragFromEntry != null && !ReferenceEquals(_dragFromEntry, entry))
                     {
                         DragAndDrop.visualMode = DragAndDropVisualMode.Move;
                         evt.Use();
@@ -165,17 +168,45 @@ namespace InspectorManager.UI
                     break;
 
                 case EventType.DragPerform:
-                    if (rect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    if (rect.Contains(evt.mousePosition) && _dragFromEntry != null && !ReferenceEquals(_dragFromEntry, entry))
                     {
                         DragAndDrop.AcceptDrag();
-                        int from = _dragFromIndex;
-                        int to = index;
-                        EditorApplication.delayCall += () => _favoritesService.ReorderFavorite(from, to);
-                        _dragFromIndex = -1;
+
+                        var moved = _dragFromEntry;
+                        var target = entry;
+                        EditorApplication.delayCall += () => ReorderDeferred(moved, target);
+
+                        _dragFromEntry = null;
                         evt.Use();
                     }
                     break;
             }
+        }
+
+        /// <summary>
+        /// エントリ参照から現在のインデックスを引き直して並び替える。
+        /// ドラッグ開始時のインデックスをそのまま使うと、その間にリストが
+        /// 変化した場合に別の項目を動かしてしまう。
+        /// </summary>
+        private void ReorderDeferred(FavoriteEntry moved, FavoriteEntry target)
+        {
+            var list = _favoritesService.GetFavorites();
+
+            int from = IndexOfReference(list, moved);
+            int to = IndexOfReference(list, target);
+            if (from < 0 || to < 0 || from == to) return;
+
+            _favoritesService.ReorderFavorite(from, to);
+        }
+
+        private static int IndexOfReference(IReadOnlyList<FavoriteEntry> list, FavoriteEntry entry)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                // FavoriteEntry.Equals は GUID/InstanceID 比較のため参照比較を使う
+                if (ReferenceEquals(list[i], entry)) return i;
+            }
+            return -1;
         }
     }
 }

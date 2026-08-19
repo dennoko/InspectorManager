@@ -695,6 +695,22 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// ローテーション順序内のInspectorを並び替える（参照指定）。
+        /// ドラッグ中にリスト構成が変化してもインデックスがずれないよう、
+        /// UI側はこちらを使う。
+        /// </summary>
+        public void ReorderInspector(EditorWindow moved, EditorWindow target)
+        {
+            if (moved == null || target == null) return;
+
+            int fromIndex = _rotationOrder.IndexOf(moved);
+            int toIndex = _rotationOrder.IndexOf(target);
+            if (fromIndex < 0 || toIndex < 0) return;
+
+            ReorderInspector(fromIndex, toIndex);
+        }
+
+        /// <summary>
         /// ローテーション順序内のInspectorを並び替える
         /// </summary>
         public void ReorderInspector(int fromIndex, int toIndex)

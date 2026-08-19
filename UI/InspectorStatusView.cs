@@ -21,9 +21,11 @@ namespace InspectorManager.UI
         private double _highlightEndTime;
         private const double HighlightDuration = 1.2;
 
-        // ドラッグ&ドロップ用
-        private int _dragFromIndex = -1;
-        private int _dragOverIndex = -1;
+        // ドラッグ&ドロップ用。
+        // ドラッグ中に SyncInspectorList でリスト構成が変わってもずれないよう、
+        // インデックスではなくウィンドウ参照で保持する
+        private EditorWindow _dragFromInspector;
+        private EditorWindow _dragOverInspector;
 
         public InspectorStatusView(
             IInspectorWindowService inspectorService,
@@ -232,7 +234,10 @@ namespace InspectorManager.UI
             bool isHighlighted = inspector == _highlightedInspector && EditorApplication.timeSinceStartup < _highlightEndTime;
 
             // ドラッグオーバー判定 (ローテーション項目のみ)
-            bool isDragOver = isRotationItem && _dragFromIndex >= 0 && _dragOverIndex == index && _dragFromIndex != index;
+            bool isDragOver = isRotationItem
+                && _dragFromInspector != null
+                && _dragOverInspector == inspector
+                && _dragFromInspector != inspector;
 
             // 背景色
             Color bgColor;
@@ -274,7 +279,7 @@ namespace InspectorManager.UI
                     EditorGUIUtility.AddCursorRect(dragHandleRect, MouseCursor.Pan);
                     GUI.Label(dragHandleRect, dragHandleContent, Styles.IconButton);
                     
-                    HandleRowDragAndDrop(dragHandleRect, rect, index);
+                    HandleRowDragAndDrop(dragHandleRect, rect, inspector);
                 }
                 else
                 {
@@ -388,7 +393,7 @@ namespace InspectorManager.UI
             EditorGUILayout.EndHorizontal();
         }
 
-        private void HandleRowDragAndDrop(Rect handleRect, Rect rowRect, int index)
+        private void HandleRowDragAndDrop(Rect handleRect, Rect rowRect, EditorWindow inspector)
         {
             if (_rotationLockController == null || !_rotationLockController.IsEnabled) return;
 
@@ -399,37 +404,43 @@ namespace InspectorManager.UI
                 case EventType.MouseDrag:
                     if (handleRect.Contains(evt.mousePosition))
                     {
-                        _dragFromIndex = index;
+                        _dragFromInspector = inspector;
                         DragAndDrop.PrepareStartDrag();
-                        DragAndDrop.SetGenericData("InspectorReorderIndex", index);
+                        DragAndDrop.SetGenericData("InspectorReorder", inspector);
                         DragAndDrop.StartDrag("Reorder Inspector");
                         evt.Use();
                     }
                     break;
 
                 case EventType.DragUpdated:
-                    if (rowRect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    if (rowRect.Contains(evt.mousePosition) && _dragFromInspector != null && _dragFromInspector != inspector)
                     {
-                        _dragOverIndex = index;
+                        _dragOverInspector = inspector;
                         DragAndDrop.visualMode = DragAndDropVisualMode.Move;
                         evt.Use();
                     }
                     break;
 
                 case EventType.DragPerform:
-                    if (rowRect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
+                    if (rowRect.Contains(evt.mousePosition) && _dragFromInspector != null && _dragFromInspector != inspector)
                     {
                         DragAndDrop.AcceptDrag();
-                        _rotationLockController.ReorderInspector(_dragFromIndex, index);
-                        _dragFromIndex = -1;
-                        _dragOverIndex = -1;
+
+                        // 並び替えは描画完了後に行う（行数は変わらないが順序が変わるため）
+                        var moved = _dragFromInspector;
+                        var target = inspector;
+                        var controller = _rotationLockController;
+                        EditorApplication.delayCall += () => controller?.ReorderInspector(moved, target);
+
+                        _dragFromInspector = null;
+                        _dragOverInspector = null;
                         evt.Use();
                     }
                     break;
 
                 case EventType.DragExited:
-                    _dragFromIndex = -1;
-                    _dragOverIndex = -1;
+                    _dragFromInspector = null;
+                    _dragOverInspector = null;
                     break;
             }
         }
