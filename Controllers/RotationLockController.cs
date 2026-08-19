@@ -49,6 +49,12 @@ namespace InspectorManager.Controllers
 
         private const string SettingsKey = "RotationLockSettings";
 
+        // セッション状態（ドメインリロードを跨いで維持する実行時状態）のキー
+        private const string StateKeyRotationOrder = "InspectorManager.RotationOrder";
+        private const string StateKeyKnown = "InspectorManager.KnownInspectors";
+        private const string StateKeyUserUnlocked = "InspectorManager.UserUnlocked";
+        private const string StateKeyExcluded = "InspectorManager.Excluded";
+
         /// <summary>
         /// 現在のローテーションモード
         /// </summary>
@@ -74,6 +80,10 @@ namespace InspectorManager.Controllers
                         _isPaused = false;
                         _inspectorService.UnlockAll();
                         _rotationOrder.Clear();
+                        _knownInspectors.Clear();
+                        _userUnlocked.Clear();
+                        _exclusionManager.Clear();
+                        SaveRuntimeState();
                     }
 
                     EventBus.Instance.Publish(new RotationLockStateChangedEvent { IsEnabled = _isEnabled });
@@ -165,6 +175,7 @@ namespace InspectorManager.Controllers
             _exclusionManager = new ExclusionManager(inspectorService);
 
             LoadSettings();
+            RestoreRuntimeState();
             Selection.selectionChanged += OnSelectionChanged;
         }
 
@@ -204,11 +215,48 @@ namespace InspectorManager.Controllers
             }
 
             _lastKnownSelection = Selection.activeObject;
+            SaveRuntimeState();
         }
 
         public void SetExcluded(EditorWindow inspector, bool isExcluded)
         {
             _exclusionManager.SetExcluded(inspector, isExcluded, _rotationOrder, SyncInspectorList);
+            SaveRuntimeState();
+        }
+
+        /// <summary>
+        /// ドメインリロードを跨いで実行時状態（ローテーション順序・除外・手動アンロック）を復元する。
+        /// これを行わないと、スクリプト再コンパイルやプレイモードの往復のたびに
+        /// ユーザーがドラッグ＆ドロップで組んだ役割の並びが失われてしまう。
+        /// </summary>
+        private void RestoreRuntimeState()
+        {
+            var inspectors = _inspectorService.GetAllInspectors();
+
+            _rotationOrder.Clear();
+            _rotationOrder.AddRange(WindowStateStore.Load(StateKeyRotationOrder, inspectors));
+
+            _knownInspectors.Clear();
+            _knownInspectors.AddRange(WindowStateStore.Load(StateKeyKnown, inspectors));
+
+            _userUnlocked.Clear();
+            _userUnlocked.AddRange(WindowStateStore.Load(StateKeyUserUnlocked, inspectors));
+
+            _exclusionManager.Restore(WindowStateStore.Load(StateKeyExcluded, inspectors));
+
+            _lastKnownSelection = Selection.activeObject;
+        }
+
+        /// <summary>
+        /// 実行時状態をセッションに保存する。SessionState はメモリ上のマップなので
+        /// 高頻度で呼んでも問題ない。
+        /// </summary>
+        private void SaveRuntimeState()
+        {
+            WindowStateStore.Save(StateKeyRotationOrder, _rotationOrder);
+            WindowStateStore.Save(StateKeyKnown, _knownInspectors);
+            WindowStateStore.Save(StateKeyUserUnlocked, _userUnlocked);
+            WindowStateStore.Save(StateKeyExcluded, _exclusionManager.GetExcluded());
         }
 
         public bool IsExcluded(EditorWindow inspector)
@@ -352,6 +400,8 @@ namespace InspectorManager.Controllers
                     _rotationOrder.Add(inspector);
                 }
             }
+
+            SaveRuntimeState();
         }
 
         /// <summary>
@@ -523,6 +573,8 @@ namespace InspectorManager.Controllers
             var item = _rotationOrder[fromIndex];
             _rotationOrder.RemoveAt(fromIndex);
             _rotationOrder.Insert(toIndex, item);
+
+            SaveRuntimeState();
         }
 
         /// <summary>
@@ -547,6 +599,8 @@ namespace InspectorManager.Controllers
 
             // 除外リストから確実に除去
             _exclusionManager.SetExcluded(inspector, false, _rotationOrder, SyncInspectorList);
+
+            SaveRuntimeState();
         }
 
         /// <summary>

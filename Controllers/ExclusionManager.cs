@@ -57,6 +57,30 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// 現在の除外リストを取得（永続化用）
+        /// </summary>
+        public IReadOnlyList<EditorWindow> GetExcluded()
+        {
+            return _excludedWindows;
+        }
+
+        /// <summary>
+        /// 除外リストを復元する（ドメインリロード後の復帰用）
+        /// </summary>
+        public void Restore(IEnumerable<EditorWindow> windows)
+        {
+            _excludedWindows.Clear();
+            if (windows == null) return;
+
+            foreach (var window in windows)
+            {
+                if (window == null) continue;
+                if (_excludedWindows.Contains(window)) continue;
+                _excludedWindows.Add(window);
+            }
+        }
+
+        /// <summary>
         /// 除外リストをクリア
         /// </summary>
         public void Clear()
