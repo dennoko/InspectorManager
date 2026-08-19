@@ -468,8 +468,14 @@ namespace InspectorManager.Controllers
             if (_isUpdating) return;
 
             var newSelection = Selection.activeObject;
-            if (newSelection == null) return;
-            
+            if (newSelection == null)
+            {
+                // 選択が解除された。記録を消しておかないと、同じオブジェクトを
+                // 選び直したときに「変化なし」と判定されて更新がスキップされる。
+                _lastKnownSelection = null;
+                return;
+            }
+
             // ブロックフィルタ判定
             if (FilterSettings != null && SelectionFilter.ShouldBlock(newSelection, FilterSettings))
             {
