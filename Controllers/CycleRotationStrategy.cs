@@ -24,6 +24,11 @@ namespace InspectorManager.Controllers
             context.NotifyUpdated(target, selection);
         }
 
+        public void Seed(UnityEngine.Object[] selection)
+        {
+            // 進行位置は _rotationOrder 側が持つため、種を受け取る必要はない
+        }
+
         public void Reset()
         {
             // 保持する内部状態はない

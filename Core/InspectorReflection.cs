@@ -13,9 +13,12 @@ namespace InspectorManager.Core
     {
         private static Type _inspectorWindowType;
         private static PropertyInfo _isLockedProperty;
+        private static PropertyInfo _trackerProperty;
         private static FieldInfo _trackerField;
         private static MethodInfo _forceRebuildMethod;
         private static MethodInfo _setObjectsLockedMethod;
+        private static MethodInfo _setObjectsLockedOnWindow;
+        private static MethodInfo _getObjectsLockedOnWindow;
         private static MethodInfo _flushOptimizedGUI;
         private static bool _initialized;
         private static bool _initializationFailed;
@@ -74,36 +77,64 @@ namespace InspectorManager.Core
                     return;
                 }
 
-                // trackerフィールドを取得（表示中オブジェクト取得用）
+                // PropertyEditor.tracker（public）。ゲッターが CreateTracker() を呼ぶため、
+                // まだトラッカーが生成されていないInspectorでも確実に取得できる。
+                _trackerProperty = _inspectorWindowType.GetProperty(
+                    "tracker",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                );
+
+                // m_Tracker はプロパティが見つからない場合のフォールバック。
+                // こちらは未生成だと null を返すので単独では使わない。
                 _trackerField = _inspectorWindowType.GetField(
                     "m_Tracker",
                     BindingFlags.Instance | BindingFlags.NonPublic
                 );
 
-                // ActiveEditorTracker.SetObjectsLockedByThisTracker を取得（直接更新用）
-                if (_trackerField != null)
-                {
-                    var trackerType = typeof(ActiveEditorTracker);
-                    _setObjectsLockedMethod = trackerType.GetMethod(
-                        "SetObjectsLockedByThisTracker",
-                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-                        null,
-                        new Type[] { typeof(List<UnityEngine.Object>) },
-                        null
-                    );
-                    _forceRebuildMethod = trackerType.GetMethod(
-                        "ForceRebuild",
-                        BindingFlags.Instance | BindingFlags.Public
-                    );
-                }
-
-                // FlushAllOptimizedGUIBlocksIfNeeded（Inspector内部の再描画強制用）
-                _flushOptimizedGUI = _inspectorWindowType.GetMethod(
-                    "FlushAllOptimizedGUIBlocksIfNeeded",
-                    BindingFlags.Instance | BindingFlags.NonPublic
+                // InspectorWindow.SetObjectsLocked(List<Object>) は Unity 自身が使う内部APIで、
+                // 「ロック状態にする」と「表示対象を差し替える」を一括で行う。
+                // トラッカーを直接叩くとロックの復旧が漏れるため、こちらを優先する。
+                _setObjectsLockedOnWindow = _inspectorWindowType.GetMethod(
+                    "SetObjectsLocked",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    new Type[] { typeof(List<UnityEngine.Object>) },
+                    null
                 );
 
-                _directUpdateAvailable = (_trackerField != null && _setObjectsLockedMethod != null);
+                _getObjectsLockedOnWindow = _inspectorWindowType.GetMethod(
+                    "GetObjectsLocked",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    new Type[] { typeof(List<UnityEngine.Object>) },
+                    null
+                );
+
+                // ActiveEditorTracker 側のAPI（SetObjectsLocked が無い場合のフォールバック）
+                var trackerType = typeof(ActiveEditorTracker);
+                _setObjectsLockedMethod = trackerType.GetMethod(
+                    "SetObjectsLockedByThisTracker",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    new Type[] { typeof(List<UnityEngine.Object>) },
+                    null
+                );
+                _forceRebuildMethod = trackerType.GetMethod(
+                    "ForceRebuild",
+                    BindingFlags.Instance | BindingFlags.Public
+                );
+
+                // FlushAllOptimizedGUIBlocksIfNeeded（Inspector内部の再描画強制用）。
+                // static メソッドなので Instance で引くと取得できない。
+                _flushOptimizedGUI = _inspectorWindowType.GetMethod(
+                    "FlushAllOptimizedGUIBlocksIfNeeded",
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public
+                );
+
+                bool trackerAccessible = _trackerProperty != null || _trackerField != null;
+                _directUpdateAvailable = _setObjectsLockedOnWindow != null
+                    || (trackerAccessible && _setObjectsLockedMethod != null);
+
                 if (!_directUpdateAvailable)
                 {
                     // 直接更新が使えないのは想定外の状況なので警告する。
@@ -113,7 +144,7 @@ namespace InspectorManager.Core
                         "[InspectorManager] Direct Inspector update is unavailable on this Unity version. " +
                         "Falling back to the lock/unlock method.");
                 }
-}
+            }
             catch (Exception ex)
             {
                 Debug.LogError($"[InspectorManager] Reflection initialization failed: {ex.Message}");
@@ -197,13 +228,10 @@ namespace InspectorManager.Core
             try
             {
                 // ActiveEditorTrackerを使用して表示中のオブジェクトを取得
-                if (_trackerField != null)
+                var tracker = GetTracker(inspector);
+                if (tracker != null && tracker.activeEditors.Length > 0)
                 {
-                    var tracker = _trackerField.GetValue(inspector) as ActiveEditorTracker;
-                    if (tracker != null && tracker.activeEditors.Length > 0)
-                    {
-                        return tracker.activeEditors[0].target;
-                    }
+                    return tracker.activeEditors[0].target;
                 }
             }
             catch (Exception ex)
@@ -212,6 +240,54 @@ namespace InspectorManager.Core
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// InspectorのActiveEditorTrackerを取得する。
+        ///
+        /// m_Tracker フィールドを直接読むと、まだ CreateTracker() が呼ばれていない
+        /// Inspector では null が返り、そのInspectorだけ更新に失敗する。
+        /// tracker プロパティはゲッター内で CreateTracker() を呼ぶため、
+        /// 必ずこちらを優先する。
+        /// </summary>
+        private static ActiveEditorTracker GetTracker(EditorWindow inspector)
+        {
+            if (inspector == null) return null;
+
+            if (_trackerProperty != null)
+            {
+                var fromProperty = _trackerProperty.GetValue(inspector) as ActiveEditorTracker;
+                if (fromProperty != null) return fromProperty;
+            }
+
+            return _trackerField?.GetValue(inspector) as ActiveEditorTracker;
+        }
+
+        /// <summary>
+        /// Inspectorがロック対象として保持しているオブジェクトを取得する。
+        /// ドメインリロード後など、こちらの記録と実際の表示がずれた場合の
+        /// 突き合わせに使う。取得できない場合は false。
+        /// </summary>
+        public static bool TryGetLockedObjects(EditorWindow inspector, List<UnityEngine.Object> result)
+        {
+            if (!IsAvailable || inspector == null || result == null) return false;
+
+            result.Clear();
+
+            // activeEditors はコンポーネントのEditorまで含むため代用できない。
+            // ロック対象そのものを返す内部APIが無ければ諦める。
+            if (_getObjectsLockedOnWindow == null) return false;
+
+            try
+            {
+                _getObjectsLockedOnWindow.Invoke(inspector, new object[] { result });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[InspectorManager] Failed to read locked objects: {ex.Message}");
+                return false;
+            }
         }
 
         /// <summary>
@@ -249,32 +325,45 @@ namespace InspectorManager.Core
             if (targetObjects == null || targetObjects.Count == 0) return false;
             if (!_directUpdateAvailable) return false;
 
+            var objectsList = new List<UnityEngine.Object>(targetObjects.Count);
+            for (int i = 0; i < targetObjects.Count; i++)
+            {
+                if (targetObjects[i] != null) objectsList.Add(targetObjects[i]);
+            }
+            if (objectsList.Count == 0) return false;
+
             try
             {
-                var tracker = _trackerField.GetValue(inspector) as ActiveEditorTracker;
-                if (tracker == null) return false;
-
-                // SetObjectsLockedByThisTrackerでロック中のInspectorに
-                // 新しいオブジェクトを強制的に設定する
-                var objectsList = new List<UnityEngine.Object>(targetObjects.Count);
-                for (int i = 0; i < targetObjects.Count; i++)
+                if (_setObjectsLockedOnWindow != null)
                 {
-                    if (targetObjects[i] != null) objectsList.Add(targetObjects[i]);
+                    // Unity内部の SetObjectsLocked は isLocked=true の設定と
+                    // 表示対象の差し替えを一括で行う。
+                    // 何らかの理由でロックが外れていた場合もここで復旧するため、
+                    // 「アンロック状態のInspectorに書き込んで即座に選択で上書きされる」
+                    // という取りこぼしが起きない。
+                    _setObjectsLockedOnWindow.Invoke(inspector, new object[] { objectsList });
                 }
-                if (objectsList.Count == 0) return false;
+                else
+                {
+                    var fallbackTracker = GetTracker(inspector);
+                    if (fallbackTracker == null) return false;
 
-                _setObjectsLockedMethod.Invoke(tracker, new object[] { objectsList });
+                    // トラッカー経由の場合はロックを自分で立てる必要がある
+                    fallbackTracker.isLocked = true;
+                    _setObjectsLockedMethod.Invoke(fallbackTracker, new object[] { objectsList });
+                }
 
-                // TrackerのForceRebuildで即時にEditorを再構築
-                if (_forceRebuildMethod != null)
+                // ForceRebuildで即時にEditorを再構築
+                var tracker = GetTracker(inspector);
+                if (tracker != null && _forceRebuildMethod != null)
                 {
                     _forceRebuildMethod.Invoke(tracker, null);
                 }
 
-                // GUI最適化ブロックのフラッシュ（表示の即時更新）
+                // GUI最適化ブロックのフラッシュ（表示の即時更新）。staticメソッド。
                 if (_flushOptimizedGUI != null)
                 {
-                    _flushOptimizedGUI.Invoke(inspector, null);
+                    _flushOptimizedGUI.Invoke(null, null);
                 }
 
                 inspector.Repaint();

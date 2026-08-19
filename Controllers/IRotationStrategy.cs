@@ -44,6 +44,13 @@ namespace InspectorManager.Controllers
         /// </param>
         void Apply(IRotationContext context, UnityEngine.Object[] selection, bool isNavigation);
 
+        /// <summary>
+        /// ローテーション開始時の状態を与える。
+        /// 開始直後は全Inspectorがその時の選択を表示しているため、
+        /// それを初期状態として扱わないと表示と内部状態がずれる。
+        /// </summary>
+        void Seed(UnityEngine.Object[] selection);
+
         /// <summary>内部状態を破棄する（ローテーション終了・モード切替時）</summary>
         void Reset();
     }

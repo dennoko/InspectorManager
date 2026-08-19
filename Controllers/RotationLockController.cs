@@ -19,6 +19,15 @@ namespace InspectorManager.Controllers
     ///
     /// どのInspectorに何を表示するかは IRotationStrategy が決め、
     /// 本クラスはロック制御・状態の追従・永続化を担う。
+    ///
+    /// ロック状態の扱いには方向がある：
+    /// - 「ユーザーがローテーションから外した」という判断は
+    ///   InspectorLockChangedEvent（拡張のUI・ショートカット経由）でのみ行う。
+    /// - 定期同期（Reconcile）で見つけたアンロックは意図の推測に使わず、
+    ///   ロックを貼り直して復旧させる。
+    /// ドメインリロードやプレイモードの往復では ActiveEditorTracker が
+    /// 作り直されてロックが落ちることがあり、これを「ユーザーの意図」と
+    /// 誤認するとInspectorが次々とローテーションから脱落するため。
     /// </summary>
     public class RotationLockController : IRotationContext, IDisposable
     {
@@ -34,8 +43,22 @@ namespace InspectorManager.Controllers
         // 一度でも観測したInspector。新規ウィンドウと「ユーザーがアンロックした既知ウィンドウ」を区別する
         private readonly List<EditorWindow> _knownInspectors = new List<EditorWindow>();
 
-        // ユーザーが手動でアンロックしたInspector。強制再ロックせず選択追従に任せる
+        // ユーザーが手動でアンロックしたInspector。強制再ロックせず選択追従に任せる。
+        // ここに入るのは InspectorLockChangedEvent（＝拡張のUI/ショートカット経由の
+        // 明示的な操作）を受け取ったときだけで、ロック状態のポーリング結果からは
+        // 推測しない。ドメインリロードやプレイモード往復でトラッカーが作り直されると
+        // ロックが落ちることがあり、それを「ユーザーの意図」と誤認すると
+        // Inspectorが次々とローテーションから脱落してしまうため。
         private readonly List<EditorWindow> _userUnlocked = new List<EditorWindow>();
+
+        // 自分でロック状態を書き込んでいる間は true。
+        // IInspectorWindowService.SetLocked は変更時にイベントを発行するので、
+        // 自分の書き込みをユーザー操作と取り違えないように抑止する。
+        private bool _applyingLock;
+
+        // 更新中に届いて処理できなかった選択。更新完了後に取りこぼさず反映する
+        private UnityEngine.Object[] _deferredSelection;
+        private bool _deferredIsNavigation;
 
         // レガシー経路で更新のため一時的にアンロック中のInspector
         private EditorWindow _pendingUnlockTarget;
@@ -96,6 +119,11 @@ namespace InspectorManager.Controllers
                 _strategy = value == RotationMode.History
                     ? (IRotationStrategy)new HistoryRotationStrategy()
                     : new CycleRotationStrategy();
+
+                // どのInspectorに何を出すかの対応が変わるため、
+                // 「内容が同じなら再構築しない」判定に使うキャッシュは捨てる
+                _lastAssigned.Clear();
+                if (_isEnabled) _strategy.Seed(Selection.objects);
             }
         }
 
@@ -191,11 +219,22 @@ namespace InspectorManager.Controllers
             // Selection の購読は SelectionCoordinator に集約されている
             EventBus.Instance.Subscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Subscribe<HistoryNavigationEvent>(OnHistoryNavigation);
+            // ロック状態の「ユーザーによる変更」はイベントで受け取る（推測しない）
+            EventBus.Instance.Subscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
 
             // 状態の同期はこのコントローラ自身が所有するティックからのみ行う。
             // 以前は描画パスやオーバーレイの更新から呼ばれており、
             // 「誰が状態を変えるのか」が追いにくくなっていた。
             EditorApplication.update += OnEditorUpdate;
+
+            // プレイモードの往復ではInspectorのトラッカーが作り直され、
+            // ロックが落ちたまま復帰することがある。復帰後にロックを貼り直す。
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+
+            // このコンストラクタはドメインリロード直後にも走る。
+            // Inspector 側の OnEnable / RestoreLockStateFromSerializedData が
+            // 終わってからでないと状態を読めないため、1フレーム遅らせて貼り直す。
+            ScheduleReassert();
         }
 
         public void Dispose()
@@ -205,7 +244,10 @@ namespace InspectorManager.Controllers
 
             EventBus.Instance.Unsubscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Unsubscribe<HistoryNavigationEvent>(OnHistoryNavigation);
+            EventBus.Instance.Unsubscribe<InspectorLockChangedEvent>(OnInspectorLockChanged);
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            _deferredSelection = null;
             _rotationOrder.Clear();
             _knownInspectors.Clear();
             _userUnlocked.Clear();
@@ -242,7 +284,7 @@ namespace InspectorManager.Controllers
                 _knownInspectors.Add(inspector);
                 // 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
                 // （以前は無条件に追加していたため、OFF→ONするだけで除外設定が壊れていた）
-                _inspectorService.SetLocked(inspector, true);
+                SetInspectorLocked(inspector, true);
 
                 if (_exclusionManager.IsExcluded(inspector)) continue;
 
@@ -250,6 +292,23 @@ namespace InspectorManager.Controllers
             }
 
             _lastKnownSelection = Selection.objects;
+
+            // ロックした時点で各Inspectorが何を表示しているかを実際に読み取る。
+            // 元々ロックされていたInspectorは現在の選択とは別のものを表示しているため、
+            // 「現在の選択で埋める」と以後その内容への更新が
+            // 「変化なし」と判定されて反映されなくなる。
+            var buffer = new List<UnityEngine.Object>();
+            foreach (var inspector in _rotationOrder)
+            {
+                if (InspectorReflection.TryGetLockedObjects(inspector, buffer) && buffer.Count > 0)
+                {
+                    _lastAssigned[inspector] = buffer.ToArray();
+                }
+            }
+
+            // 戦略にも開始時の状態を伝えないと、内部の履歴と実際の表示がずれる
+            _strategy.Seed(_lastKnownSelection);
+
             SaveRuntimeState();
         }
 
@@ -268,7 +327,7 @@ namespace InspectorManager.Controllers
             var inspectors = _inspectorService.GetAllInspectors();
             foreach (var inspector in inspectors)
             {
-                _inspectorService.SetLocked(inspector, _preRotationLocked.Contains(inspector));
+                SetInspectorLocked(inspector, _preRotationLocked.Contains(inspector));
             }
             _preRotationLocked.Clear();
         }
@@ -389,6 +448,13 @@ namespace InspectorManager.Controllers
         {
             if (_disposed || !_isEnabled) return;
 
+            // 保留された選択は間隔を待たずに反映する
+            if (_deferredSelection != null && !_isUpdating)
+            {
+                FlushDeferredSelection();
+                return;
+            }
+
             if (EditorApplication.timeSinceStartup - _lastReconcileTime < ReconcileInterval) return;
             _lastReconcileTime = EditorApplication.timeSinceStartup;
 
@@ -425,7 +491,7 @@ namespace InspectorManager.Controllers
                 if (_pendingUnlockTarget != null)
                 {
                     // 一時アンロックしたまま取り残されないよう確実に戻す
-                    _inspectorService.SetLocked(_pendingUnlockTarget, true);
+                    SetInspectorLocked(_pendingUnlockTarget, true);
                     _pendingUnlockTarget = null;
                 }
                 _isUpdating = false;
@@ -442,36 +508,149 @@ namespace InspectorManager.Controllers
                 if (!_knownInspectors.Contains(inspector))
                 {
                     _knownInspectors.Add(inspector);
-                    _inspectorService.SetLocked(inspector, true);
+                    SetInspectorLocked(inspector, true);
                     if (!_rotationOrder.Contains(inspector)) _rotationOrder.Add(inspector);
                     changed = true;
                     continue;
                 }
 
-                if (!_inspectorService.IsLocked(inspector))
-                {
-                    // ローテーションは対象を常にロック状態に保つ。既知のInspectorが
-                    // アンロックされていたら、ユーザーが意図的に解除したものとみなす。
-                    // 強制再ロック（＝ロックボタンが効かない状態）はせず、
-                    // ローテーションから外して通常の選択追従に戻す。
-                    if (!_userUnlocked.Contains(inspector)) _userUnlocked.Add(inspector);
-                    _rotationOrder.Remove(inspector);
-                    changed = true;
-                    continue;
-                }
-
-                // 再びロックされたらローテーションに復帰させる
-                changed |= _userUnlocked.Remove(inspector);
+                // ユーザーが明示的にアンロックしたものは選択追従に任せる
+                if (_userUnlocked.Contains(inspector)) continue;
 
                 if (!_rotationOrder.Contains(inspector))
                 {
                     _rotationOrder.Add(inspector);
                     changed = true;
                 }
+
+                // ローテーション対象は常にロック状態に保つ。
+                // ここでロックが外れているのはユーザー操作ではなく
+                // ライフサイクル（ドメインリロード等）でトラッカーが作り直された結果なので、
+                // 状態を推測せずロックを貼り直す。
+                // 貼り直さないとそのInspectorだけ選択に追従してしまい、
+                // 「複数のInspectorが同じ最新の選択を表示する」状態になる。
+                if (!_inspectorService.IsLocked(inspector))
+                {
+                    SetInspectorLocked(inspector, true);
+                    // Unity側が表示対象を差し替えている可能性があるためキャッシュを捨てる
+                    _lastAssigned.Remove(inspector);
+                }
             }
 
             // 毎ティック書き込まないよう、実際に変化があったときだけ保存する
             if (changed) SaveRuntimeState();
+        }
+
+        /// <summary>
+        /// ロック状態を書き込む。自分の書き込みが
+        /// InspectorLockChangedEvent としてユーザー操作と誤認されないよう抑止する。
+        /// </summary>
+        private void SetInspectorLocked(EditorWindow inspector, bool locked)
+        {
+            _applyingLock = true;
+            try
+            {
+                _inspectorService.SetLocked(inspector, locked);
+            }
+            finally
+            {
+                _applyingLock = false;
+            }
+        }
+
+        /// <summary>
+        /// ロック状態の変更通知。拡張のUI・ショートカット経由の操作だけがここに届く。
+        ///
+        /// 「ユーザーがアンロックした」という判断はこの経路でのみ行う。
+        /// 定期的なポーリングでアンロックを検出して同じ判断をすると、
+        /// ドメインリロードやプレイモード往復でロックが落ちただけの状況を
+        /// ユーザーの意図と取り違え、Inspectorがローテーションから脱落してしまう。
+        /// </summary>
+        private void OnInspectorLockChanged(InspectorLockChangedEvent evt)
+        {
+            if (_disposed || !_isEnabled) return;
+            if (_applyingLock) return;
+
+            var inspector = evt.Inspector;
+            if (inspector == null) return;
+            if (_exclusionManager.IsExcluded(inspector)) return;
+
+            if (evt.IsLocked)
+            {
+                // 再ロック：ローテーションの末尾に復帰させる
+                if (!_userUnlocked.Remove(inspector)) return;
+
+                if (!_knownInspectors.Contains(inspector)) _knownInspectors.Add(inspector);
+                if (!_rotationOrder.Contains(inspector)) _rotationOrder.Add(inspector);
+            }
+            else
+            {
+                // 明示的なアンロック：ローテーションから外して通常の選択追従に戻す
+                if (!_userUnlocked.Contains(inspector)) _userUnlocked.Add(inspector);
+                _rotationOrder.Remove(inspector);
+                _lastAssigned.Remove(inspector);
+            }
+
+            SaveRuntimeState();
+        }
+
+        /// <summary>
+        /// 次のエディタ更新でロック状態を貼り直す。
+        /// Inspector 側の OnEnable / RestoreLockStateFromSerializedData より
+        /// 後に走らせる必要があるため遅延させる。
+        /// </summary>
+        private void ScheduleReassert()
+        {
+            EditorApplication.delayCall += () =>
+            {
+                if (_disposed || !_isEnabled) return;
+                ReassertLockStates();
+            };
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (_disposed) return;
+            if (state != PlayModeStateChange.EnteredEditMode && state != PlayModeStateChange.EnteredPlayMode) return;
+
+            ScheduleReassert();
+        }
+
+        /// <summary>
+        /// ローテーション対象のロックを貼り直し、表示中の内容を実際の状態から読み直す。
+        ///
+        /// ドメインリロードやプレイモードの往復では ActiveEditorTracker が
+        /// 作り直され、ロックが外れたまま復帰することがある。
+        /// この状態を放置すると、そのInspectorは選択に追従してしまい
+        /// ローテーションが崩れる。
+        /// </summary>
+        private void ReassertLockStates()
+        {
+            var currentInspectors = _inspectorService.GetAllInspectors();
+            var buffer = new List<UnityEngine.Object>();
+
+            foreach (var inspector in currentInspectors)
+            {
+                if (inspector == null) continue;
+                if (_userUnlocked.Contains(inspector)) continue;
+                if (!_rotationOrder.Contains(inspector) && !_exclusionManager.IsExcluded(inspector)) continue;
+
+                if (!_inspectorService.IsLocked(inspector))
+                {
+                    SetInspectorLocked(inspector, true);
+                }
+
+                // リロードを跨いだ後の割り当てキャッシュは信用できない。
+                // Inspectorが実際に保持している対象で作り直す。
+                if (InspectorReflection.TryGetLockedObjects(inspector, buffer) && buffer.Count > 0)
+                {
+                    _lastAssigned[inspector] = buffer.ToArray();
+                }
+                else
+                {
+                    _lastAssigned.Remove(inspector);
+                }
+            }
         }
 
         /// <summary>
@@ -531,7 +710,6 @@ namespace InspectorManager.Controllers
         {
             if (!_isEnabled) return;
             if (_isPaused) return;
-            if (_isUpdating) return;
 
             // Unity標準と同じマルチ編集表示を再現するため、選択集合全体を扱う
             var newSelection = evt.SelectedObjects;
@@ -549,19 +727,53 @@ namespace InspectorManager.Controllers
                 return;
             }
 
+            // 同じ選択の重複通知は無視する。
+            // ここで打ち切る場合は _navigationTarget をまだ消費してはならない。
+            // Unity は選択操作の途中で一度前の選択のまま通知することがあり、
+            // 先に消費すると本命のナビゲーション通知を通常の選択と誤認して
+            // 履歴が余計に積まれる／ローテーションが進んでしまう。
+            if (IsSameSelection(newSelection, _lastKnownSelection)) return;
+
             // 履歴ナビゲーション由来かどうかを判定（フラグは1回の選択変更で消費する）
             bool isNavigation = _navigationTarget != null
                 && newSelection.Length == 1
                 && newSelection[0] == _navigationTarget;
             _navigationTarget = null;
 
-            if (IsSameSelection(newSelection, _lastKnownSelection)) return;
             _lastKnownSelection = newSelection;
+
+            // レガシー経路の更新は delayCall を跨ぐため、その間に届いた選択は
+            // 捨てずに保留しておく。捨てると「選択したのに更新されない」が起きる。
+            if (_isUpdating)
+            {
+                _deferredSelection = newSelection;
+                _deferredIsNavigation = isNavigation;
+                return;
+            }
 
             Reconcile();
             if (_rotationOrder.Count == 0) return;
 
             PerformUpdate(newSelection, isNavigation);
+        }
+
+        /// <summary>
+        /// 更新中に届いて保留された選択を反映する。
+        /// </summary>
+        private void FlushDeferredSelection()
+        {
+            if (_disposed || _deferredSelection == null) return;
+
+            var selection = _deferredSelection;
+            var isNavigation = _deferredIsNavigation;
+            _deferredSelection = null;
+
+            if (!_isEnabled || _isPaused || _isUpdating) return;
+
+            Reconcile();
+            if (_rotationOrder.Count == 0) return;
+
+            PerformUpdate(selection, isNavigation);
         }
 
         /// <summary>
@@ -596,6 +808,8 @@ namespace InspectorManager.Controllers
             {
                 _isUpdating = false;
             }
+
+            FlushDeferredSelection();
         }
 
         private void OnHistoryNavigation(HistoryNavigationEvent evt)
@@ -659,14 +873,14 @@ namespace InspectorManager.Controllers
                 _pendingUnlockTarget = targetInspector;
                 // アンロックするとUnity側が表示対象を差し替えるためキャッシュは無効
                 _lastAssigned.Remove(targetInspector);
-                _inspectorService.SetLocked(targetInspector, false);
+                SetInspectorLocked(targetInspector, false);
                 targetInspector.Repaint();
 
                 EditorApplication.delayCall += () =>
                 {
                     if (_disposed) return;
 
-                    _inspectorService.SetLocked(targetInspector, true);
+                    SetInspectorLocked(targetInspector, true);
                     _pendingUnlockTarget = null;
 
                     if (!isNavigation) AdvanceRotation(targetInspector);
@@ -674,6 +888,9 @@ namespace InspectorManager.Controllers
                     NotifyUpdated(targetInspector, newSelection);
 
                     _isUpdating = false;
+
+                    // 待っている間に届いた選択を取りこぼさない
+                    FlushDeferredSelection();
                 };
             }
             catch (Exception ex)
@@ -681,7 +898,7 @@ namespace InspectorManager.Controllers
                 Debug.LogError($"[InspectorManager] Rotation update failed: {ex.Message}");
                 if (_pendingUnlockTarget != null)
                 {
-                    _inspectorService.SetLocked(_pendingUnlockTarget, true);
+                    SetInspectorLocked(_pendingUnlockTarget, true);
                     _pendingUnlockTarget = null;
                 }
                 _isUpdating = false;
@@ -727,7 +944,7 @@ namespace InspectorManager.Controllers
         {
             if (inspector == null) return;
 
-            _inspectorService.SetLocked(inspector, true);
+            SetInspectorLocked(inspector, true);
 
             if (!_knownInspectors.Contains(inspector))
             {

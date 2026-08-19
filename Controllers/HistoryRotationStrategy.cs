@@ -50,6 +50,19 @@ namespace InspectorManager.Controllers
             context.NotifyUpdated(order[0], selection);
         }
 
+        public void Seed(UnityEngine.Object[] selection)
+        {
+            _history.Clear();
+
+            // ローテーション開始時、各Inspectorはその時点の選択を表示している。
+            // これを履歴の先頭として扱わないと、次の選択で
+            // 「2番目のInspectorに1つ前を出す」対応関係が1つずれる。
+            if (selection != null && selection.Length > 0)
+            {
+                _history.Add(selection);
+            }
+        }
+
         public void Reset()
         {
             _history.Clear();

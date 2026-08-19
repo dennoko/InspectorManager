@@ -96,6 +96,8 @@ Rotation keeps every managed Inspector locked. If you **unlock one manually** ‚Ä
 
 Locking it again returns it to the end of the rotation.
 
+> **Note**: Use the Inspector Manager lock icon, the overlay button, or the shortcut to leave the rotation. Unlocking with the padlock in the Inspector's own title bar is re-locked automatically, because a rotating Inspector must stay locked and the extension treats an unlocked one as state to repair.
+
 > **Use Case**: Use this when you want one Inspector back to its normal "always show the current selection" behavior. Exclusion (the "Ôºç" button) keeps an Inspector pinned and locked; unlocking makes it follow the selection instead.
 
 ### Restoring Lock States
