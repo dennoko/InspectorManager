@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 
 namespace InspectorManager.Models
@@ -8,6 +9,15 @@ namespace InspectorManager.Models
     /// </summary>
     internal static class AssetEntryResolver
     {
+        // 解決結果のキャッシュ。履歴・お気に入りのリストは行ごと・フレームごとに
+        // 解決を要求するため、キャッシュが無いと GUIDToAssetPath や
+        // LoadAllAssetsAtPath が毎フレーム全行分走ってしまう。
+        // アセットの追加/削除/移動でのみ無効化すればよい。
+        private static readonly Dictionary<string, UnityEngine.Object> _cache =
+            new Dictionary<string, UnityEngine.Object>();
+
+        private static bool _invalidationHooked;
+
         /// <summary>
         /// GUID（＋サブアセットのローカルID）に対応するアセットを取得する。
         /// 見つからない場合は null。
@@ -16,6 +26,33 @@ namespace InspectorManager.Models
         {
             if (string.IsNullOrEmpty(guid)) return null;
 
+            EnsureInvalidationHooked();
+
+            var cacheKey = guid + ":" + localId;
+            if (_cache.TryGetValue(cacheKey, out var cached))
+            {
+                return cached;
+            }
+
+            var resolved = ResolveUncached(guid, localId);
+            _cache[cacheKey] = resolved;
+            return resolved;
+        }
+
+        private static void EnsureInvalidationHooked()
+        {
+            if (_invalidationHooked) return;
+            _invalidationHooked = true;
+            EditorApplication.projectChanged += ClearCache;
+        }
+
+        public static void ClearCache()
+        {
+            _cache.Clear();
+        }
+
+        private static UnityEngine.Object ResolveUncached(string guid, long localId)
+        {
             var path = AssetDatabase.GUIDToAssetPath(guid);
             if (string.IsNullOrEmpty(path)) return null;
 

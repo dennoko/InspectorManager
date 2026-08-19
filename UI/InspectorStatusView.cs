@@ -15,7 +15,12 @@ namespace InspectorManager.UI
         private readonly Controllers.RotationLockController _rotationLockController;
         private readonly ILocalizationService _localizationService;
         private Vector2 _scrollPosition;
-        
+
+        // 1回の Draw 内で使い回すウィンドウ一覧（固定番号の算出用）。
+        // 行ごとに GetAllInspectors() を呼ぶと
+        // Resources.FindObjectsOfTypeAll が行数分走ってしまう。
+        private IReadOnlyList<EditorWindow> _windowOrderCache;
+
         // ハイライト用
         private EditorWindow _highlightedInspector;
         private double _highlightEndTime;
@@ -61,6 +66,9 @@ namespace InspectorManager.UI
             {
                 _rotationLockController.SyncInspectorList();
             }
+
+            // 固定番号の算出用に1回だけ取得する
+            _windowOrderCache = _inspectorService.GetAllInspectors();
 
             // ローテーション有効かどうかで表示モードを切り替え
             bool isRotationEnabled = _rotationLockController != null && _rotationLockController.IsEnabled;
@@ -149,9 +157,23 @@ namespace InspectorManager.UI
             }
         }
 
+        /// <summary>
+        /// Inspectorの固定番号（1始まり）を返す。見つからない場合は -1。
+        /// </summary>
+        private int GetWindowNumber(EditorWindow inspector)
+        {
+            if (_windowOrderCache == null) return -1;
+
+            for (int i = 0; i < _windowOrderCache.Count; i++)
+            {
+                if (_windowOrderCache[i] == inspector) return i + 1;
+            }
+            return -1;
+        }
+
         private void DrawStandardView()
         {
-            var inspectors = _inspectorService.GetAllInspectors();
+            var inspectors = _windowOrderCache;
             if (inspectors.Count == 0)
             {
                 DrawEmptyMessage();
@@ -211,21 +233,8 @@ namespace InspectorManager.UI
         private void DrawDetailedInspectorRow(EditorWindow inspector, int index, bool isRotationItem, bool isExcludedItem, bool isStandardView = false)
         {
             // 固定番号（ウィンドウインデックス）を取得
-            int fixedIndex = -1;
-            if (_rotationLockController != null)
-            {
-                fixedIndex = _rotationLockController.GetWindowIndex(inspector);
-            }
-            else
-            {
-                // Fallback for standard view without controller
-                var all = _inspectorService.GetAllInspectors();
-                for (int i = 0; i < all.Count; i++)
-                {
-                    if (all[i] == inspector) { fixedIndex = i + 1; break; }
-                }
-                if (fixedIndex == -1) fixedIndex = index + 1;
-            }
+            int fixedIndex = GetWindowNumber(inspector);
+            if (fixedIndex < 0) fixedIndex = index + 1;
 
             bool isLocked = _inspectorService.IsLocked(inspector);
             var inspectedObject = _inspectorService.GetInspectedObject(inspector);

@@ -83,6 +83,11 @@ namespace InspectorManager.UI
         private void DrawFavoriteEntry(FavoriteEntry entry, int index)
         {
             var bgColor = index % 2 == 0 ? Styles.Colors.RowEven : Styles.Colors.RowOdd;
+
+            // GetObject() は行ごとに1回だけ呼ぶ
+            var obj = entry.GetObject();
+            var isValid = obj != null;
+
             var rect = EditorGUILayout.BeginHorizontal(Styles.ListItem);
             {
                 EditorGUI.DrawRect(rect, bgColor);
@@ -97,15 +102,13 @@ namespace InspectorManager.UI
                 if (GUILayout.Button(Styles.FavoriteIcon, Styles.IconButton))
                 {
                     // 描画中にリストを変更すると行数が変わりレイアウトが崩れる
-                    var obj = entry.GetObject();
-                    if (obj != null)
+                    if (isValid)
                     {
                         EditorApplication.delayCall += () => _favoritesService.RemoveFavorite(obj);
                     }
                 }
 
                 // オブジェクト情報
-                var isValid = entry.IsValid();
                 EditorGUI.BeginDisabledGroup(!isValid);
                 {
                     var content = new GUIContent(
@@ -117,12 +120,12 @@ namespace InspectorManager.UI
                     {
                         if (isValid)
                         {
-                            Selection.activeObject = entry.GetObject();
+                            Selection.activeObject = obj;
                         }
                     }
 
                     // ドラッグによる並び替え
-                    HandleDragAndDrop(entry, index, rect);
+                    HandleDragAndDrop(entry, obj, rect);
                 }
                 EditorGUI.EndDisabledGroup();
 
@@ -136,7 +139,7 @@ namespace InspectorManager.UI
             EditorGUILayout.EndHorizontal();
         }
 
-        private void HandleDragAndDrop(FavoriteEntry entry, int index, Rect rect)
+        private void HandleDragAndDrop(FavoriteEntry entry, Object obj, Rect rect)
         {
             var evt = Event.current;
 
@@ -148,7 +151,6 @@ namespace InspectorManager.UI
                         _dragFromEntry = entry;
 
                         DragAndDrop.PrepareStartDrag();
-                        var obj = entry.GetObject();
                         if (obj != null)
                         {
                             DragAndDrop.objectReferences = new Object[] { obj };

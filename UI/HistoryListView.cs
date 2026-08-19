@@ -140,8 +140,10 @@ namespace InspectorManager.UI
                 GUILayout.Space(6);
 
                 // お気に入りボタン
+                // GetObject() は行ごとに1回だけ呼ぶ（IsValid() も内部で呼ぶため）
                 var obj = entry.GetObject();
-                var isFavorite = obj != null && _favoritesService.IsFavorite(obj);
+                var isValid = obj != null;
+                var isFavorite = isValid && _favoritesService.IsFavorite(obj);
 
                 if (isFavorite)
                 {
@@ -163,7 +165,6 @@ namespace InspectorManager.UI
                 }
 
                 // オブジェクト情報
-                var isValid = entry.IsValid();
                 EditorGUI.BeginDisabledGroup(!isValid);
                 {
                     var content = new GUIContent(
@@ -188,7 +189,7 @@ namespace InspectorManager.UI
                     }
 
                     // ドラッグ対応
-                    if (Event.current.type == EventType.MouseDrag && isValid && obj != null)
+                    if (Event.current.type == EventType.MouseDrag && isValid)
                     {
                         var lastRect = GUILayoutUtility.GetLastRect();
                         if (lastRect.Contains(Event.current.mousePosition))

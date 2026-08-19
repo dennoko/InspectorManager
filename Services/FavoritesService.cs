@@ -15,6 +15,11 @@ namespace InspectorManager.Services
         private readonly IReadOnlyList<FavoriteEntry> _favoritesView;
         private readonly IPersistenceService _persistence;
 
+        // IsFavorite() 用の索引。リスト描画では行ごと・フレームごとに問い合わせが
+        // 来るため、毎回 FavoriteEntry を生成して線形探索するとアセットパス解決と
+        // GUID変換が大量に走ってしまう。
+        private readonly HashSet<int> _instanceIdIndex = new HashSet<int>();
+
         private const string FavoritesKey = "Favorites";
 
         public FavoritesService(IPersistenceService persistence)
@@ -42,6 +47,7 @@ namespace InspectorManager.Services
             entry.SortOrder = _favorites.Count;
             _favorites.Add(entry);
 
+            RebuildIndex();
             SaveFavorites();
             EventBus.Instance.Publish(new FavoritesUpdatedEvent());
         }
@@ -57,6 +63,7 @@ namespace InspectorManager.Services
             {
                 _favorites.RemoveAt(index);
                 UpdateSortOrders();
+                RebuildIndex();
                 SaveFavorites();
                 EventBus.Instance.Publish(new FavoritesUpdatedEvent());
             }
@@ -66,8 +73,8 @@ namespace InspectorManager.Services
         {
             if (obj == null) return false;
 
-            var tempEntry = new FavoriteEntry(obj);
-            return _favorites.Any(e => e.Equals(tempEntry));
+            // 索引はエントリ生成時と読み込み時に解決済みのInstanceIDで構築される
+            return _instanceIdIndex.Contains(obj.GetInstanceID());
         }
 
         public void ReorderFavorite(int fromIndex, int toIndex)
@@ -90,6 +97,7 @@ namespace InspectorManager.Services
             if (_favorites.Count == 0) return;
 
             _favorites.Clear();
+            RebuildIndex();
             SaveFavorites();
             EventBus.Instance.Publish(new FavoritesUpdatedEvent());
         }
@@ -100,8 +108,21 @@ namespace InspectorManager.Services
             if (removed > 0)
             {
                 UpdateSortOrders();
+                RebuildIndex();
                 SaveFavorites();
                 EventBus.Instance.Publish(new FavoritesUpdatedEvent());
+            }
+        }
+
+        /// <summary>
+        /// IsFavorite() 用のInstanceID索引を作り直す
+        /// </summary>
+        private void RebuildIndex()
+        {
+            _instanceIdIndex.Clear();
+            foreach (var entry in _favorites)
+            {
+                if (entry.InstanceId != 0) _instanceIdIndex.Add(entry.InstanceId);
             }
         }
 
@@ -121,12 +142,15 @@ namespace InspectorManager.Services
                 _favorites.Clear();
                 _favorites.AddRange(data.Entries.OrderBy(e => e.SortOrder));
 
-                // InstanceIDを更新
+                // 保存済みのInstanceIDはセッションを跨ぐと無効なので、
+                // GUIDから解決し直したオブジェクトのIDで更新する
                 foreach (var entry in _favorites)
                 {
                     entry.RefreshInstanceId();
                 }
             }
+
+            RebuildIndex();
         }
 
         private void SaveFavorites()
