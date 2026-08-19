@@ -33,6 +33,10 @@ namespace InspectorManager.Controllers
         // レガシー経路で更新のため一時的にアンロック中のInspector
         private EditorWindow _pendingUnlockTarget;
 
+        // ローテーション開始前にユーザー自身がロックしていたInspector。
+        // ローテーション終了時にこの状態へ戻す
+        private readonly List<EditorWindow> _preRotationLocked = new List<EditorWindow>();
+
         // 履歴モード用の選択履歴
         private readonly List<UnityEngine.Object> _selectionHistory = new List<UnityEngine.Object>();
         
@@ -54,6 +58,7 @@ namespace InspectorManager.Controllers
         private const string StateKeyKnown = "InspectorManager.KnownInspectors";
         private const string StateKeyUserUnlocked = "InspectorManager.UserUnlocked";
         private const string StateKeyExcluded = "InspectorManager.Excluded";
+        private const string StateKeyPreRotationLocked = "InspectorManager.PreRotationLocked";
 
         /// <summary>
         /// 現在のローテーションモード
@@ -78,7 +83,9 @@ namespace InspectorManager.Controllers
                     else
                     {
                         _isPaused = false;
-                        _inspectorService.UnlockAll();
+                        // 一括アンロックすると、ユーザーが元々ロックしていたInspectorまで
+                        // 巻き込んで解除してしまう。開始前のスナップショットへ戻す。
+                        RestorePreRotationLockStates();
                         _rotationOrder.Clear();
                         _knownInspectors.Clear();
                         _userUnlocked.Clear();
@@ -188,6 +195,7 @@ namespace InspectorManager.Controllers
             _rotationOrder.Clear();
             _knownInspectors.Clear();
             _userUnlocked.Clear();
+            _preRotationLocked.Clear();
             _exclusionManager.Clear();
             _pendingUnlockTarget = null;
             _isUpdating = false;
@@ -198,9 +206,19 @@ namespace InspectorManager.Controllers
             _rotationOrder.Clear();
             _userUnlocked.Clear();
             _knownInspectors.Clear();
+            _preRotationLocked.Clear();
             _exclusionManager.CleanupInvalid();
 
             var inspectors = _inspectorService.GetAllInspectors();
+
+            // ローテーション終了時に元へ戻せるよう、開始前のロック状態を記録しておく
+            foreach (var inspector in inspectors)
+            {
+                if (_inspectorService.IsLocked(inspector))
+                {
+                    _preRotationLocked.Add(inspector);
+                }
+            }
 
             foreach (var inspector in inspectors)
             {
@@ -225,6 +243,20 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// ローテーション開始前のロック状態へ戻す。
+        /// 開始後に作られたInspectorはスナップショットに含まれないためアンロックされる。
+        /// </summary>
+        private void RestorePreRotationLockStates()
+        {
+            var inspectors = _inspectorService.GetAllInspectors();
+            foreach (var inspector in inspectors)
+            {
+                _inspectorService.SetLocked(inspector, _preRotationLocked.Contains(inspector));
+            }
+            _preRotationLocked.Clear();
+        }
+
+        /// <summary>
         /// ドメインリロードを跨いで実行時状態（ローテーション順序・除外・手動アンロック）を復元する。
         /// これを行わないと、スクリプト再コンパイルやプレイモードの往復のたびに
         /// ユーザーがドラッグ＆ドロップで組んだ役割の並びが失われてしまう。
@@ -244,6 +276,9 @@ namespace InspectorManager.Controllers
 
             _exclusionManager.Restore(WindowStateStore.Load(StateKeyExcluded, inspectors));
 
+            _preRotationLocked.Clear();
+            _preRotationLocked.AddRange(WindowStateStore.Load(StateKeyPreRotationLocked, inspectors));
+
             _lastKnownSelection = Selection.activeObject;
         }
 
@@ -257,6 +292,7 @@ namespace InspectorManager.Controllers
             WindowStateStore.Save(StateKeyKnown, _knownInspectors);
             WindowStateStore.Save(StateKeyUserUnlocked, _userUnlocked);
             WindowStateStore.Save(StateKeyExcluded, _exclusionManager.GetExcluded());
+            WindowStateStore.Save(StateKeyPreRotationLocked, _preRotationLocked);
         }
 
         public bool IsExcluded(EditorWindow inspector)
