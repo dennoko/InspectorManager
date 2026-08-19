@@ -12,6 +12,8 @@ It allows you to automatically update multiple Inspector windows, manage selecti
 When multiple Inspector windows are open, selecting an object typically updates all windows to show the same content.
 Enabling the "Rotation" feature changes this behavior so that Inspector windows are updated automatically on each selection.
 
+Selecting multiple objects at once shows Unity's standard multi-edit view, just like an unmanaged Inspector.
+
 ### Update Modes
 
 #### History Mode (Default)
@@ -53,7 +55,7 @@ The Status tab shows all currently open Inspector windows.
 Each row includes:
 Each row includes:
 - **Drag Handle**: Drag & drop to reorder rotation order (roles)
-- **Lock Icon**: Click to toggle lock/unlock
+- **Lock Icon**: Click to toggle lock/unlock (see below)
 - **Inspector Number**: Fixed window identifier
 - **Rotation Badge**: Shows current target (▶) or order
 - **Displayed Object Name**: Currently inspected object
@@ -84,9 +86,21 @@ Drag the handle icon on the left side of each row to change the rotation order.
 
 ### Exclusion
 
-When rotation is enabled, click "－" to exclude an Inspector from rotation. Excluded Inspectors show an "(Ex)" badge and maintain their locked state.
+When rotation is enabled, click "－" to exclude an Inspector from rotation. Excluded Inspectors move to the "── Excluded ──" section and keep their locked state. Click "＋" to bring one back into the rotation.
 
 > **Use Case**: Pin a specific object (like a material or prefab) to one Inspector, while the rest rotate normally.
+
+### Leaving the Rotation by Unlocking
+
+Rotation keeps every managed Inspector locked. If you **unlock one manually** — via the lock icon or the overlay button — that Inspector leaves the rotation and moves to the "── Not in Rotation (follows selection) ──" section, where it tracks the selection like an ordinary Inspector.
+
+Locking it again returns it to the end of the rotation.
+
+> **Use Case**: Use this when you want one Inspector back to its normal "always show the current selection" behavior. Exclusion (the "－" button) keeps an Inspector pinned and locked; unlocking makes it follow the selection instead.
+
+### Restoring Lock States
+
+Turning rotation off restores the lock states from before rotation started, and so does closing the Inspector Manager window. Inspectors you had locked yourself are never unlocked as a side effect.
 
 ---
 
@@ -149,7 +163,7 @@ Click the overlay button to toggle that Inspector's lock state.
 
 ### Rotation Settings
 
-- **Auto Focus Inspector on Update**: Automatically focus the updated Inspector.
+- **Auto Focus Inspector on Update**: Automatically focus the updated Inspector. Focus is not stolen when the selection comes from the Hierarchy or Project window, since that would interrupt what you are doing.
 - **Update Mode**: Choose between History mode (fixed position) and Cycle mode (rotate in order).
 
 ### Block Inspector Update
