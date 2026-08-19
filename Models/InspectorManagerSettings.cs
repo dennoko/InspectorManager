@@ -159,7 +159,7 @@ namespace InspectorManager.Models
         {
             return new InspectorManagerSettings
             {
-_maxHistoryCount = 50,
+                _maxHistoryCount = 50,
                 _recordSceneObjects = true,
                 _recordAssets = true,
                 _autoCleanInvalidHistory = true,
@@ -186,7 +186,7 @@ _maxHistoryCount = 50,
         {
             return new InspectorManagerSettings
             {
-_maxHistoryCount = _maxHistoryCount,
+                _maxHistoryCount = _maxHistoryCount,
                 _recordSceneObjects = _recordSceneObjects,
                 _recordAssets = _recordAssets,
                 _autoCleanInvalidHistory = _autoCleanInvalidHistory,
