@@ -107,13 +107,7 @@ namespace InspectorManager.UI
 
             // コントローラーの初期化
             _rotationLockController = new RotationLockController(_inspectorService, _persistenceService);
-            if (_settings != null)
-            {
-                _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
-                _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
-                _rotationLockController.FilterSettings = _settings;
-                _rotationLockController.Mode = _settings.RotationMode;
-            }
+            _rotationLockController.ApplySettings(_settings);
             // HotkeyControllerからアクセスできるようServiceLocatorに登録
             ServiceLocator.Instance.Register(_rotationLockController);
             _historyController = new HistoryController(_historyService, _favoritesService, _settings);
@@ -130,7 +124,6 @@ namespace InspectorManager.UI
                 _historyService,
                 _favoritesService,
                 _historyController,
-                _rotationLockController,
                 _settings);
             _settingsTabView.OnSettingsChanged = SaveSettings;
             _settingsTabView.OnTitleUpdateRequired = title => titleContent = new GUIContent(title);
@@ -300,15 +293,24 @@ namespace InspectorManager.UI
             EditorGUI.DrawRect(rect, Styles.Colors.Separator);
         }
 
+        /// <summary>
+        /// 設定タブでの変更を保存し、依存コンポーネントへ反映する。
+        /// SettingsTabView は「すべてリセット」で設定インスタンス自体を差し替えるため、
+        /// 反映は毎回ここでまとめて行う。
+        /// </summary>
         private void SaveSettings()
         {
             _settings = _settingsTabView?.Settings ?? _settings;
+            if (_settings == null) return;
+
             _persistenceService?.Save("Settings", _settings);
 
             if (_historyService != null)
             {
                 _historyService.MaxHistoryCount = _settings.MaxHistoryCount;
             }
+
+            _rotationLockController?.ApplySettings(_settings);
         }
 
         // イベントハンドラー

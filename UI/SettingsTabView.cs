@@ -15,7 +15,6 @@ namespace InspectorManager.UI
         private readonly IHistoryService _historyService;
         private readonly IFavoritesService _favoritesService;
         private readonly HistoryController _historyController;
-        private readonly RotationLockController _rotationLockController;
 
         private InspectorManagerSettings _settings;
         private Vector2 _scrollPosition;
@@ -36,14 +35,12 @@ namespace InspectorManager.UI
             IHistoryService historyService,
             IFavoritesService favoritesService,
             HistoryController historyController,
-            RotationLockController rotationLockController,
             InspectorManagerSettings settings)
         {
             _localizationService = localizationService;
             _historyService = historyService;
             _favoritesService = favoritesService;
             _historyController = historyController;
-            _rotationLockController = rotationLockController;
             _settings = settings;
         }
 
@@ -109,14 +106,10 @@ namespace InspectorManager.UI
             DrawSubSectionHeader(_localizationService.GetString("Settings_Rotation"));
             EditorGUILayout.Space(2);
 
-            bool newAutoFocus = DrawSettingToggle(
+            // 値の反映は OnSettingsChanged → InspectorManagerWindow.SaveSettings() が
+            // ApplySettings() でまとめて行うため、ここでは設定を書き換えるだけでよい
+            _settings.AutoFocusOnUpdate = DrawSettingToggle(
                 _localizationService.GetString("Settings_AutoFocus"), _settings.AutoFocusOnUpdate);
-            if (newAutoFocus != _settings.AutoFocusOnUpdate)
-            {
-                _settings.AutoFocusOnUpdate = newAutoFocus;
-                if (_rotationLockController != null)
-                    _rotationLockController.AutoFocusOnUpdate = newAutoFocus;
-            }
 
             // ── ローテーションモード選択 ──
             EditorGUILayout.Space(4);
@@ -138,8 +131,6 @@ namespace InspectorManager.UI
             if (newMode != _settings.RotationMode)
             {
                 _settings.RotationMode = newMode;
-                if (_rotationLockController != null)
-                    _rotationLockController.Mode = newMode;
                 OnSettingsChanged?.Invoke();
             }
 
@@ -287,15 +278,11 @@ namespace InspectorManager.UI
 
             _historyService?.ClearHistory();
             _favoritesService?.ClearAll();
+            // 設定インスタンスごと差し替える。依存コンポーネントへの反映は
+            // OnSettingsChanged → SaveSettings() → ApplySettings() が行う
             _settings = InspectorManagerSettings.CreateDefault();
             _settings.Language = _localizationService.CurrentLanguage;
             OnSettingsChanged?.Invoke();
-
-            if (_rotationLockController != null)
-            {
-                _rotationLockController.BlockFolderSelection = _settings.BlockFolderSelection;
-                _rotationLockController.AutoFocusOnUpdate = _settings.AutoFocusOnUpdate;
-            }
         }
 
         // ── UIヘルパー（InspectorManagerWindowと共通化可能だが、独立性を保つ）──

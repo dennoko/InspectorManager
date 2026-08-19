@@ -97,6 +97,21 @@ namespace InspectorManager.Controllers
         /// </summary>
         public InspectorManagerSettings FilterSettings { get; set; }
 
+        /// <summary>
+        /// 設定オブジェクトから派生する状態をまとめて反映する。
+        /// 設定インスタンスが差し替わる場合（リセット等）でも取りこぼしが出ないよう、
+        /// 設定の伝播は必ずこのメソッドを経由させること。
+        /// </summary>
+        public void ApplySettings(InspectorManagerSettings settings)
+        {
+            if (settings == null) return;
+
+            FilterSettings = settings;
+            AutoFocusOnUpdate = settings.AutoFocusOnUpdate;
+            BlockFolderSelection = settings.BlockFolderSelection;
+            Mode = settings.RotationMode;
+        }
+
         public bool IsNextTarget(EditorWindow inspector)
         {
             if (_rotationOrder.Count == 0) return false;
