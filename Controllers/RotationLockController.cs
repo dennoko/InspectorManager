@@ -172,14 +172,19 @@ namespace InspectorManager.Controllers
 
         public void InitializeRotation()
         {
-            var inspectors = _inspectorService.GetAllInspectors();
-            if (inspectors.Count == 0) return;
-
             _rotationOrder.Clear();
+            _exclusionManager.CleanupInvalid();
+
+            var inspectors = _inspectorService.GetAllInspectors();
 
             foreach (var inspector in inspectors)
             {
+                // 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
+                // （以前は無条件に追加していたため、OFF→ONするだけで除外設定が壊れていた）
                 _inspectorService.SetLocked(inspector, true);
+
+                if (_exclusionManager.IsExcluded(inspector)) continue;
+
                 _rotationOrder.Add(inspector);
             }
 
