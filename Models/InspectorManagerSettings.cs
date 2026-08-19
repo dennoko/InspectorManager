@@ -10,6 +10,9 @@ namespace InspectorManager.Models
     [Serializable]
     public class InspectorManagerSettings
     {
+        /// <summary>既定のローテーションモード（RotationMode.History）</summary>
+        private const int DefaultRotationMode = (int)Controllers.RotationMode.History;
+
         [SerializeField] private bool _rotationLockEnabled;
         [SerializeField] private int _maxHistoryCount = 50;
         [SerializeField] private bool _recordSceneObjects = true;
@@ -18,7 +21,10 @@ namespace InspectorManager.Models
         [SerializeField] private bool _blockFolderSelection = true;
         [SerializeField] private string _language = "ja";
         [SerializeField] private bool _autoFocusOnUpdate = true;
-        [SerializeField] private int _rotationMode = 1;
+        // 既定は履歴モード (RotationMode.History = 1)。
+        // JsonUtility は既定コンストラクタを通してからJSONを流し込むため、
+        // このフィールド初期化子と CreateDefault() の値は必ず一致させること。
+        [SerializeField] private int _rotationMode = DefaultRotationMode;
 
         // ── ブロック設定: カテゴリA（デフォルト ON）──
         [SerializeField] private bool _blockDefaultAsset = true;
@@ -171,7 +177,7 @@ namespace InspectorManager.Models
                 _blockFolderSelection = true,
                 _language = "ja",
                 _autoFocusOnUpdate = true,
-                _rotationMode = 0,
+                _rotationMode = DefaultRotationMode,
                 // カテゴリA
                 _blockDefaultAsset = true,
                 _blockAsmDef = true,
