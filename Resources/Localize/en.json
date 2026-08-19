@@ -82,6 +82,7 @@
     "Tooltip_CloseInspector": "Close this Inspector",
     "Section_RotationOrder": "── Rotation Order ──",
     "Section_Excluded": "── Excluded ──",
+    "Section_Unmanaged": "── Not in Rotation (follows selection) ──",
     "History_Latest": "Latest",
     "History_Previous": "{0} Prev"
 }

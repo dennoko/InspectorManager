@@ -82,6 +82,7 @@
     "Tooltip_CloseInspector": "このInspectorを閉じる",
     "Section_RotationOrder": "── ローテーション順序 ──",
     "Section_Excluded": "── 除外中 ──",
+    "Section_Unmanaged": "── ローテーション対象外（選択に追従）──",
     "History_Latest": "最新",
     "History_Previous": "{0}つ前"
 }

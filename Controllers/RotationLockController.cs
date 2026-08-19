@@ -23,7 +23,16 @@ namespace InspectorManager.Controllers
         
         // ローテーション順序（EditorWindow参照で管理、インデックス0が更新対象）
         private List<EditorWindow> _rotationOrder = new List<EditorWindow>();
-        
+
+        // 一度でも観測したInspector。新規ウィンドウと「ユーザーがアンロックした既知ウィンドウ」を区別する
+        private readonly List<EditorWindow> _knownInspectors = new List<EditorWindow>();
+
+        // ユーザーが手動でアンロックしたInspector。強制再ロックせず選択追従に任せる
+        private readonly List<EditorWindow> _userUnlocked = new List<EditorWindow>();
+
+        // レガシー経路で更新のため一時的にアンロック中のInspector
+        private EditorWindow _pendingUnlockTarget;
+
         // 履歴モード用の選択履歴
         private readonly List<UnityEngine.Object> _selectionHistory = new List<UnityEngine.Object>();
         
@@ -166,20 +175,26 @@ namespace InspectorManager.Controllers
 
             Selection.selectionChanged -= OnSelectionChanged;
             _rotationOrder.Clear();
+            _knownInspectors.Clear();
+            _userUnlocked.Clear();
             _exclusionManager.Clear();
+            _pendingUnlockTarget = null;
             _isUpdating = false;
         }
 
         public void InitializeRotation()
         {
             _rotationOrder.Clear();
+            _userUnlocked.Clear();
+            _knownInspectors.Clear();
             _exclusionManager.CleanupInvalid();
 
             var inspectors = _inspectorService.GetAllInspectors();
 
             foreach (var inspector in inspectors)
             {
-                // 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
+                _knownInspectors.Add(inspector);
+// 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
                 // （以前は無条件に追加していたため、OFF→ONするだけで除外設定が壊れていた）
                 _inspectorService.SetLocked(inspector, true);
 
@@ -277,46 +292,74 @@ namespace InspectorManager.Controllers
         public void SyncInspectorList()
         {
             var currentInspectors = _inspectorService.GetAllInspectors();
-            
-            // 削除されたInspectorを除去
-            var removedInspectors = _rotationOrder.Where(i => !currentInspectors.Contains(i)).ToList();
-            foreach (var removed in removedInspectors)
+
+            // 閉じられたInspectorを各リストから除去
+            _rotationOrder.RemoveAll(i => !currentInspectors.Contains(i));
+            _knownInspectors.RemoveAll(i => !currentInspectors.Contains(i));
+            _userUnlocked.RemoveAll(i => !currentInspectors.Contains(i));
+            _exclusionManager.CleanupInvalid();
+
+            if (_pendingUnlockTarget != null && !currentInspectors.Contains(_pendingUnlockTarget))
             {
-                _rotationOrder.Remove(removed);
+                _pendingUnlockTarget = null;
             }
 
-            // 除外リストから無効な参照を除去
-            _exclusionManager.CleanupInvalid();
-            
-            // 新しく追加されたInspectorを末尾に追加（ロック状態で）
+            // タイムアウトチェック。以降のロック判定を正しい状態で行うため先に処理する
+            if (_isUpdating && (EditorApplication.timeSinceStartup - _updateStartTime) > UpdateTimeout)
+            {
+                Debug.LogWarning("[InspectorManager] Rotation update timed out, resetting state.");
+                if (_pendingUnlockTarget != null)
+                {
+                    // 一時アンロックしたまま取り残されないよう確実に戻す
+                    _inspectorService.SetLocked(_pendingUnlockTarget, true);
+                    _pendingUnlockTarget = null;
+                }
+                _isUpdating = false;
+            }
+
             foreach (var inspector in currentInspectors)
             {
                 if (_exclusionManager.IsExcluded(inspector)) continue;
+
+                // 更新のため一時的にアンロック中のものには触らない
+                if (_isUpdating && inspector == _pendingUnlockTarget) continue;
+
+                // 初めて観測したInspectorはロックしてローテーションに参加させる
+                if (!_knownInspectors.Contains(inspector))
+                {
+                    _knownInspectors.Add(inspector);
+                    _inspectorService.SetLocked(inspector, true);
+                    if (!_rotationOrder.Contains(inspector)) _rotationOrder.Add(inspector);
+                    continue;
+                }
+
+                if (!_inspectorService.IsLocked(inspector))
+                {
+                    // ローテーションは対象を常にロック状態に保つ。既知のInspectorが
+                    // アンロックされていたら、ユーザーが意図的に解除したものとみなす。
+                    // 強制再ロック（＝ロックボタンが効かない状態）はせず、
+                    // ローテーションから外して通常の選択追従に戻す。
+                    if (!_userUnlocked.Contains(inspector)) _userUnlocked.Add(inspector);
+                    _rotationOrder.Remove(inspector);
+                    continue;
+                }
+
+                // 再びロックされたらローテーションに復帰させる
+                _userUnlocked.Remove(inspector);
 
                 if (!_rotationOrder.Contains(inspector))
                 {
                     _rotationOrder.Add(inspector);
-                    _inspectorService.SetLocked(inspector, true);
                 }
             }
+        }
 
-            // タイムアウトチェック
-            if (_isUpdating && (EditorApplication.timeSinceStartup - _updateStartTime) > UpdateTimeout)
-            {
-                Debug.LogWarning("[InspectorManager] Rotation update timed out, resetting state.");
-                _isUpdating = false;
-            }
-
-            // ロック状態の整合性チェック
-            foreach (var inspector in currentInspectors)
-            {
-                if (_exclusionManager.IsExcluded(inspector)) continue;
-
-                if (!_inspectorService.IsLocked(inspector) && !_isUpdating)
-                {
-                    _inspectorService.SetLocked(inspector, true);
-                }
-            }
+        /// <summary>
+        /// ユーザーが手動でアンロックし、ローテーションから外れているかどうか
+        /// </summary>
+        public bool IsUserUnlocked(EditorWindow inspector)
+        {
+            return inspector != null && _userUnlocked.Contains(inspector);
         }
 
         public void RotateToNext()
@@ -403,6 +446,9 @@ namespace InspectorManager.Controllers
                 }
 
                 // フォールバック（旧方式）
+                // 一時アンロック中であることを記録し、SyncInspectorList が
+                // 「ユーザーによるアンロック」と誤検出しないようにする
+                _pendingUnlockTarget = targetInspector;
                 _inspectorService.SetLocked(targetInspector, false);
                 targetInspector.Repaint();
 
@@ -411,6 +457,7 @@ namespace InspectorManager.Controllers
                     if (_disposed) return;
 
                     _inspectorService.SetLocked(targetInspector, true);
+                    _pendingUnlockTarget = null;
 
                     if (_rotationOrder.Count > 0)
                     {
@@ -435,6 +482,11 @@ namespace InspectorManager.Controllers
             catch (Exception ex)
             {
                 Debug.LogError($"[InspectorManager] Rotation update failed: {ex.Message}");
+                if (_pendingUnlockTarget != null)
+                {
+                    _inspectorService.SetLocked(_pendingUnlockTarget, true);
+                    _pendingUnlockTarget = null;
+                }
                 _isUpdating = false;
             }
         }
@@ -481,6 +533,12 @@ namespace InspectorManager.Controllers
             if (inspector == null) return;
 
             _inspectorService.SetLocked(inspector, true);
+
+            if (!_knownInspectors.Contains(inspector))
+            {
+                _knownInspectors.Add(inspector);
+            }
+            _userUnlocked.Remove(inspector);
 
             if (!_rotationOrder.Contains(inspector))
             {

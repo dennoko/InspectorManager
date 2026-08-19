@@ -102,21 +102,28 @@ namespace InspectorManager.UI
             _rotationLockController.GetInspectorLists(out var rotationList, out var excludedList, out var unmanagedList);
 
             // ── ローテーション順序セクション ──
-            if (rotationList.Count > 0 || unmanagedList.Count > 0)
+            if (rotationList.Count > 0)
             {
                 EditorGUILayout.LabelField(_localizationService.GetString("Section_RotationOrder"), EditorStyles.boldLabel);
-                
-                // ローテーション中のInspector
+
                 for (int i = 0; i < rotationList.Count; i++)
                 {
                     DrawDetailedInspectorRow(rotationList[i], i, true, false);
                 }
+                EditorGUILayout.Space(8);
+            }
 
-                // 未管理のInspector（新規追加など）
+            // ── ローテーション対象外セクション ──
+            // ユーザーが手動でアンロックしたInspectorはここに現れ、通常どおり選択に追従する。
+            // 再度ロックするとローテーションに復帰する。
+            if (unmanagedList.Count > 0)
+            {
+                EditorGUILayout.LabelField(_localizationService.GetString("Section_Unmanaged"), EditorStyles.boldLabel);
+
                 for (int i = 0; i < unmanagedList.Count; i++)
                 {
-                    // ローテーション末尾に表示するが、ドラッグ＆ドロップや役割ラベルは無し
-                    DrawDetailedInspectorRow(unmanagedList[i], rotationList.Count + i, false, false);
+                    // ドラッグ＆ドロップや役割ラベルは無し
+                    DrawDetailedInspectorRow(unmanagedList[i], i, false, false);
                 }
                 EditorGUILayout.Space(8);
             }
