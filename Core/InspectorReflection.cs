@@ -228,7 +228,20 @@ namespace InspectorManager.Core
         /// <returns>成功した場合true</returns>
         public static bool SetInspectedObject(EditorWindow inspector, UnityEngine.Object targetObject)
         {
-            if (!IsAvailable || inspector == null || targetObject == null) return false;
+            if (targetObject == null) return false;
+            return SetInspectedObjects(inspector, new[] { targetObject });
+        }
+
+        /// <summary>
+        /// ロック状態のInspectorウィンドウの表示対象を複数まとめて設定する。
+        /// SetObjectsLockedByThisTracker はリストを受け取るため、
+        /// Unity標準と同じマルチ編集表示を再現できる。
+        /// </summary>
+        /// <returns>成功した場合true</returns>
+        public static bool SetInspectedObjects(EditorWindow inspector, IList<UnityEngine.Object> targetObjects)
+        {
+            if (!IsAvailable || inspector == null) return false;
+            if (targetObjects == null || targetObjects.Count == 0) return false;
             if (!_directUpdateAvailable) return false;
 
             try
@@ -238,7 +251,13 @@ namespace InspectorManager.Core
 
                 // SetObjectsLockedByThisTrackerでロック中のInspectorに
                 // 新しいオブジェクトを強制的に設定する
-                var objectsList = new List<UnityEngine.Object> { targetObject };
+                var objectsList = new List<UnityEngine.Object>(targetObjects.Count);
+                for (int i = 0; i < targetObjects.Count; i++)
+                {
+                    if (targetObjects[i] != null) objectsList.Add(targetObjects[i]);
+                }
+                if (objectsList.Count == 0) return false;
+
                 _setObjectsLockedMethod.Invoke(tracker, new object[] { objectsList });
 
                 // TrackerのForceRebuildで即時にEditorを再構築

@@ -13,6 +13,24 @@ namespace InspectorManager.Controllers
         private static readonly string[] AsmDefExtensions = { ".asmdef", ".asmref" };
 
         /// <summary>
+        /// 選択集合全体をブロック対象とするかどうかを判定する。
+        /// 1つでもInspectorで扱う価値のあるオブジェクトが含まれていればブロックしない。
+        /// （フォルダとGameObjectの混合選択などを取りこぼさないため）
+        /// </summary>
+        public static bool ShouldBlock(Object[] objects, InspectorManagerSettings settings)
+        {
+            if (objects == null || objects.Length == 0) return false;
+            if (settings == null) return false;
+
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (objects[i] == null) continue;
+                if (!ShouldBlock(objects[i], settings)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 指定オブジェクトをブロック対象とするかどうかを判定する
         /// </summary>
         public static bool ShouldBlock(Object obj, InspectorManagerSettings settings)

@@ -37,14 +37,14 @@ namespace InspectorManager.Controllers
         // ローテーション終了時にこの状態へ戻す
         private readonly List<EditorWindow> _preRotationLocked = new List<EditorWindow>();
 
-        // 履歴モード用の選択履歴
-        private readonly List<UnityEngine.Object> _selectionHistory = new List<UnityEngine.Object>();
-        
+        // 履歴モード用の選択履歴（1エントリ＝1回分の選択。複数選択もそのまま保持する）
+        private readonly List<UnityEngine.Object[]> _selectionHistory = new List<UnityEngine.Object[]>();
+
         // 更新処理中フラグ
         private bool _isUpdating;
         
         // 最後に認識した選択（無限ループ防止）
-        private UnityEngine.Object _lastKnownSelection;
+        private UnityEngine.Object[] _lastKnownSelection;
 
         // delayCallタイムアウト管理
         private double _updateStartTime;
@@ -232,7 +232,7 @@ namespace InspectorManager.Controllers
                 _rotationOrder.Add(inspector);
             }
 
-            _lastKnownSelection = Selection.activeObject;
+            _lastKnownSelection = Selection.objects;
             SaveRuntimeState();
         }
 
@@ -279,7 +279,7 @@ namespace InspectorManager.Controllers
             _preRotationLocked.Clear();
             _preRotationLocked.AddRange(WindowStateStore.Load(StateKeyPreRotationLocked, inspectors));
 
-            _lastKnownSelection = Selection.activeObject;
+            _lastKnownSelection = Selection.objects;
         }
 
         /// <summary>
@@ -467,8 +467,9 @@ namespace InspectorManager.Controllers
             if (_isPaused) return;
             if (_isUpdating) return;
 
-            var newSelection = Selection.activeObject;
-            if (newSelection == null)
+            // Unity標準と同じマルチ編集表示を再現するため、選択集合全体を扱う
+            var newSelection = Selection.objects;
+            if (newSelection == null || newSelection.Length == 0)
             {
                 // 選択が解除された。記録を消しておかないと、同じオブジェクトを
                 // 選び直したときに「変化なし」と判定されて更新がスキップされる。
@@ -481,8 +482,8 @@ namespace InspectorManager.Controllers
             {
                 return;
             }
-            
-            if (newSelection == _lastKnownSelection) return;
+
+            if (IsSameSelection(newSelection, _lastKnownSelection)) return;
             _lastKnownSelection = newSelection;
 
             SyncInspectorList();
@@ -499,9 +500,24 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// 2つの選択集合が同一かどうか（順序も含めて比較）
+        /// </summary>
+        private static bool IsSameSelection(UnityEngine.Object[] a, UnityEngine.Object[] b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Length != b.Length) return false;
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 選択変更時のローテーション更新処理
         /// </summary>
-        private void PerformRotationUpdate(UnityEngine.Object newSelection)
+        private void PerformRotationUpdate(UnityEngine.Object[] newSelection)
         {
             if (_rotationOrder.Count == 0) return;
 
@@ -515,7 +531,7 @@ namespace InspectorManager.Controllers
                 // 新方式: 直接更新を試行
                 if (InspectorReflection.IsDirectUpdateAvailable)
                 {
-                    bool success = InspectorReflection.SetInspectedObject(targetInspector, newSelection);
+                    bool success = InspectorReflection.SetInspectedObjects(targetInspector, newSelection);
                     if (success)
                     {
                         _rotationOrder.RemoveAt(0);
@@ -525,7 +541,7 @@ namespace InspectorManager.Controllers
                         EventBus.Instance.Publish(new RotationUpdateCompletedEvent
                         {
                             UpdatedInspector = targetInspector,
-                            DisplayedObject = newSelection
+                            DisplayedObject = GetPrimary(newSelection)
                         });
 
                         if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
@@ -560,7 +576,7 @@ namespace InspectorManager.Controllers
                     EventBus.Instance.Publish(new RotationUpdateCompletedEvent
                     {
                         UpdatedInspector = targetInspector,
-                        DisplayedObject = newSelection
+                        DisplayedObject = GetPrimary(newSelection)
                     });
 
                     if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
@@ -649,7 +665,7 @@ namespace InspectorManager.Controllers
         /// 履歴モードのカスケード更新処理
         /// 各Inspectorに固定位置の履歴を表示する
         /// </summary>
-        private void PerformHistoryUpdate(UnityEngine.Object newSelection)
+        private void PerformHistoryUpdate(UnityEngine.Object[] newSelection)
         {
             if (_rotationOrder.Count == 0) return;
 
@@ -687,19 +703,19 @@ namespace InspectorManager.Controllers
                     if (i >= _selectionHistory.Count) break;
 
                     var inspector = _rotationOrder[i];
-                    var historyObject = _selectionHistory[i];
+                    var historyObjects = _selectionHistory[i];
 
                     // nullや破棄済みオブジェクトはスキップ
-                    if (historyObject == null) continue;
+                    if (historyObjects == null || historyObjects.Length == 0) continue;
 
-                    InspectorReflection.SetInspectedObject(inspector, historyObject);
+                    InspectorReflection.SetInspectedObjects(inspector, historyObjects);
                 }
 
                 // 最初のInspectorの更新完了を通知
                 EventBus.Instance.Publish(new RotationUpdateCompletedEvent
                 {
                     UpdatedInspector = _rotationOrder[0],
-                    DisplayedObject = newSelection
+                    DisplayedObject = GetPrimary(newSelection)
                 });
 
                 if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
@@ -715,6 +731,20 @@ namespace InspectorManager.Controllers
             {
                 _isUpdating = false;
             }
+        }
+
+        /// <summary>
+        /// 選択集合の代表オブジェクト（先頭）を返す。UI通知用。
+        /// </summary>
+        private static UnityEngine.Object GetPrimary(UnityEngine.Object[] selection)
+        {
+            if (selection == null) return null;
+
+            for (int i = 0; i < selection.Length; i++)
+            {
+                if (selection[i] != null) return selection[i];
+            }
+            return null;
         }
 
         private bool IsFocusingHierarchyOrProject()
