@@ -1,7 +1,8 @@
 namespace InspectorManager.Controllers
 {
     /// <summary>
-    /// ローテーション更新の戦略インターフェース
+    /// ローテーションの更新方式。
+    /// 実際の更新処理は IRotationStrategy の実装が担う。
     /// </summary>
     public enum RotationMode
     {

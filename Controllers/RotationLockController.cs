@@ -13,7 +13,7 @@ namespace InspectorManager.Controllers
     /// ローテーションロック機能の制御
     /// 常時全Inspectorをロックし、Selection変更時のみ対象Inspectorを一瞬アンロックして更新させる方式。
     /// </summary>
-    public class RotationLockController : IDisposable
+    public class RotationLockController : IRotationContext, IDisposable
     {
         private readonly IInspectorWindowService _inspectorService;
         private readonly IPersistenceService _persistence;
@@ -43,8 +43,8 @@ namespace InspectorManager.Controllers
         private readonly Dictionary<EditorWindow, UnityEngine.Object[]> _lastAssigned =
             new Dictionary<EditorWindow, UnityEngine.Object[]>();
 
-        // 履歴モード用の選択履歴（1エントリ＝1回分の選択。複数選択もそのまま保持する）
-        private readonly List<UnityEngine.Object[]> _selectionHistory = new List<UnityEngine.Object[]>();
+        // モードごとの更新戦略（どのInspectorに何を表示するか）
+        private IRotationStrategy _strategy = new HistoryRotationStrategy();
 
         // 更新処理中フラグ
         private bool _isUpdating;
@@ -75,9 +75,22 @@ namespace InspectorManager.Controllers
         private const string StateKeyPreRotationLocked = "InspectorManager.PreRotationLocked";
 
         /// <summary>
-        /// 現在のローテーションモード
+        /// 現在のローテーションモード。
+        /// 変更すると対応する戦略へ差し替え、旧モードの内部状態は破棄する。
         /// </summary>
-        public RotationMode Mode { get; set; } = RotationMode.History;
+        public RotationMode Mode
+        {
+            get => _strategy.Mode;
+            set
+            {
+                if (_strategy.Mode == value) return;
+
+                _strategy.Reset();
+                _strategy = value == RotationMode.History
+                    ? (IRotationStrategy)new HistoryRotationStrategy()
+                    : new CycleRotationStrategy();
+            }
+        }
 
         public bool IsEnabled
         {
@@ -104,7 +117,7 @@ namespace InspectorManager.Controllers
                         _knownInspectors.Clear();
                         _userUnlocked.Clear();
                         _lastAssigned.Clear();
-                        _selectionHistory.Clear();
+                        _strategy.Reset();
                         _exclusionManager.Clear();
                         SaveRuntimeState();
                     }
@@ -203,7 +216,7 @@ namespace InspectorManager.Controllers
             _knownInspectors.Clear();
             _preRotationLocked.Clear();
             _lastAssigned.Clear();
-            _selectionHistory.Clear();
+            _strategy.Reset();
             _exclusionManager.CleanupInvalid();
 
             var inspectors = _inspectorService.GetAllInspectors();
@@ -541,13 +554,40 @@ namespace InspectorManager.Controllers
             Reconcile();
             if (_rotationOrder.Count == 0) return;
 
-            if (Mode == RotationMode.History)
+            PerformUpdate(newSelection, isNavigation);
+        }
+
+        /// <summary>
+        /// 選択変更をInspectorへ反映する。
+        ///
+        /// 直接更新が使えるかどうかの判定はここ1箇所だけで行う。
+        /// 使えない環境ではアンロック/再ロックによる旧方式しか取れず、
+        /// これは「先頭のInspectorが現在の選択を表示する」＝サイクル相当の
+        /// 動きに限られるため、モードによらず共通の経路で処理する。
+        /// </summary>
+        private void PerformUpdate(UnityEngine.Object[] newSelection, bool isNavigation)
+        {
+            if (!InspectorReflection.IsDirectUpdateAvailable)
             {
-                PerformHistoryUpdate(newSelection, isNavigation);
+                _strategy.Reset();
+                PerformLegacyUpdate(newSelection, isNavigation);
+                return;
             }
-            else
+
+            _isUpdating = true;
+            _updateStartTime = EditorApplication.timeSinceStartup;
+
+            try
             {
-                PerformRotationUpdate(newSelection, isNavigation);
+                _strategy.Apply(this, newSelection, isNavigation);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InspectorManager] Rotation update failed: {ex.Message}");
+            }
+            finally
+            {
+                _isUpdating = false;
             }
         }
 
@@ -587,12 +627,16 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
-        /// 選択変更時のローテーション更新処理
+        /// 旧方式の更新処理。
+        /// 対象Inspectorを一瞬アンロックして Unity 自身に選択を反映させ、
+        /// 次のエディタ更新で再ロックする。
+        /// 直接更新（SetObjectsLockedByThisTracker）が使えない場合の
+        /// フォールバックであり、サイクル相当の動きになる。
         /// </summary>
         /// <param name="isNavigation">
         /// 履歴の戻る/進む由来の場合 true。ローテーションを進めず表示だけ差し替える。
         /// </param>
-        private void PerformRotationUpdate(UnityEngine.Object[] newSelection, bool isNavigation = false)
+        private void PerformLegacyUpdate(UnityEngine.Object[] newSelection, bool isNavigation)
         {
             if (_rotationOrder.Count == 0) return;
 
@@ -603,31 +647,6 @@ namespace InspectorManager.Controllers
             {
                 var targetInspector = _rotationOrder[0];
 
-                // 新方式: 直接更新を試行
-                if (InspectorReflection.IsDirectUpdateAvailable)
-                {
-                    bool success = AssignToInspector(targetInspector, newSelection);
-                    if (success)
-                    {
-                        if (!isNavigation) AdvanceRotation(targetInspector);
-                        _isUpdating = false;
-
-                        EventBus.Instance.Publish(new RotationUpdateCompletedEvent
-                        {
-                            UpdatedInspector = targetInspector,
-                            DisplayedObject = GetPrimary(newSelection)
-                        });
-
-                        if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
-                        {
-                            targetInspector.Focus();
-                        }
-                        return;
-                    }
-                    Debug.LogWarning("[InspectorManager] Direct update failed, falling back to legacy mode.");
-                }
-
-                // フォールバック（旧方式）
                 // 一時アンロック中であることを記録し、Reconcile が
                 // 「ユーザーによるアンロック」と誤検出しないようにする
                 _pendingUnlockTarget = targetInspector;
@@ -645,16 +664,7 @@ namespace InspectorManager.Controllers
 
                     if (!isNavigation) AdvanceRotation(targetInspector);
 
-                    EventBus.Instance.Publish(new RotationUpdateCompletedEvent
-                    {
-                        UpdatedInspector = targetInspector,
-                        DisplayedObject = GetPrimary(newSelection)
-                    });
-
-                    if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
-                    {
-                        targetInspector.Focus();
-                    }
+                    NotifyUpdated(targetInspector, newSelection);
 
                     _isUpdating = false;
                 };
@@ -729,127 +739,41 @@ namespace InspectorManager.Controllers
             SaveRuntimeState();
         }
 
-        /// <summary>
-        /// 履歴モードのカスケード更新処理
-        /// 各Inspectorに固定位置の履歴を表示する
-        /// </summary>
-        /// <param name="isNavigation">
-        /// 履歴の戻る/進む由来の場合 true。履歴に積まず先頭を差し替える。
-        /// </param>
-        private void PerformHistoryUpdate(UnityEngine.Object[] newSelection, bool isNavigation = false)
+        // ────────── IRotationContext ──────────
+
+        IReadOnlyList<EditorWindow> IRotationContext.RotationOrder => _rotationOrder;
+
+        bool IRotationContext.Assign(EditorWindow inspector, UnityEngine.Object[] objects)
         {
-            if (_rotationOrder.Count == 0) return;
+            return AssignToInspector(inspector, objects);
+        }
 
-            // 直接更新が使えない場合はサイクルモードにフォールバックする。
-            // PerformRotationUpdate は delayCall による非同期経路を持ち _isUpdating を
-            // 自前で管理するため、この分岐は try/finally の外で処理しなければならない。
-            // （try 内で return しても finally は実行され、delayCall 待ちのフラグを
-            //   false に踏み潰してしまい、対象Inspectorが即座に再ロックされていた）
-            if (!InspectorReflection.IsDirectUpdateAvailable)
-            {
-                Debug.LogWarning("[InspectorManager] Direct update not available, falling back to Cycle mode.");
-                _selectionHistory.Clear();
-                PerformRotationUpdate(newSelection, isNavigation);
-                return;
-            }
+        void IRotationContext.AdvanceRotation(EditorWindow updated)
+        {
+            AdvanceRotation(updated);
+        }
 
-            _isUpdating = true;
-            _updateStartTime = EditorApplication.timeSinceStartup;
-
-            try
-            {
-                // 履歴の先頭に新しい選択を追加。
-                // ただし戻る/進む由来の場合は積まずに先頭を差し替える
-                // （同じオブジェクトが重複し、最も古い履歴が押し出されるのを防ぐ）
-                if (isNavigation && _selectionHistory.Count > 0)
-                {
-                    _selectionHistory[0] = newSelection;
-                }
-                else
-                {
-                    _selectionHistory.Insert(0, newSelection);
-                }
-
-                // 破棄済みオブジェクトを取り除いて詰める。
-                // 詰めずにスキップすると、そのInspectorだけ古い表示が残り
-                // 「最新／1つ前／2つ前」の対応関係が崩れてしまう。
-                CompactSelectionHistory();
-
-                // 履歴をInspector数+余裕分まで保持
-                int maxHistory = _rotationOrder.Count + 5;
-                while (_selectionHistory.Count > maxHistory)
-                {
-                    _selectionHistory.RemoveAt(_selectionHistory.Count - 1);
-                }
-
-                // 各Inspectorに対応する履歴を設定
-                for (int i = 0; i < _rotationOrder.Count; i++)
-                {
-                    if (i >= _selectionHistory.Count) break;
-
-                    // 履歴がずれていないタブまで毎回作り直すと描画が引っかかるため、
-                    // AssignToInspector 側で内容が同じ場合はスキップする
-                    AssignToInspector(_rotationOrder[i], _selectionHistory[i]);
-                }
-
-                // 最初のInspectorの更新完了を通知
-                EventBus.Instance.Publish(new RotationUpdateCompletedEvent
-                {
-                    UpdatedInspector = _rotationOrder[0],
-                    DisplayedObject = GetPrimary(newSelection)
-                });
-
-                if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
-                {
-                    _rotationOrder[0].Focus();
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[InspectorManager] History update failed: {ex.Message}");
-            }
-            finally
-            {
-                _isUpdating = false;
-            }
+        void IRotationContext.NotifyUpdated(EditorWindow inspector, UnityEngine.Object[] selection)
+        {
+            NotifyUpdated(inspector, selection);
         }
 
         /// <summary>
-        /// 選択履歴から破棄済みオブジェクトを取り除き、空になったエントリを詰める。
+        /// 更新完了を通知し、必要なら対象Inspectorにフォーカスする
         /// </summary>
-        private void CompactSelectionHistory()
+        private void NotifyUpdated(EditorWindow inspector, UnityEngine.Object[] selection)
         {
-            for (int i = _selectionHistory.Count - 1; i >= 0; i--)
+            if (inspector == null) return;
+
+            EventBus.Instance.Publish(new RotationUpdateCompletedEvent
             {
-                var entry = _selectionHistory[i];
+                UpdatedInspector = inspector,
+                DisplayedObject = GetPrimary(selection)
+            });
 
-                if (entry == null || entry.Length == 0)
-                {
-                    _selectionHistory.RemoveAt(i);
-                    continue;
-                }
-
-                int aliveCount = 0;
-                for (int j = 0; j < entry.Length; j++)
-                {
-                    if (entry[j] != null) aliveCount++;
-                }
-
-                if (aliveCount == entry.Length) continue;
-
-                if (aliveCount == 0)
-                {
-                    _selectionHistory.RemoveAt(i);
-                    continue;
-                }
-
-                var alive = new UnityEngine.Object[aliveCount];
-                int k = 0;
-                for (int j = 0; j < entry.Length; j++)
-                {
-                    if (entry[j] != null) alive[k++] = entry[j];
-                }
-                _selectionHistory[i] = alive;
+            if (AutoFocusOnUpdate && !IsFocusingHierarchyOrProject())
+            {
+                inspector.Focus();
             }
         }
 
