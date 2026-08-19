@@ -24,7 +24,8 @@ namespace InspectorManager.UI
         private double _lastUpdateTime;
         private const double UpdateInterval = 0.5;
 
-        private readonly HashSet<EditorWindow> _flashingInspectors = new HashSet<EditorWindow>();
+        /// <summary>フラッシュ表示の終了時刻（EditorApplication.timeSinceStartup 基準）</summary>
+        private readonly Dictionary<EditorWindow, double> _flashUntil = new Dictionary<EditorWindow, double>();
 
         public InspectorOverlayController(
             IInspectorWindowService inspectorService, 
@@ -57,30 +58,56 @@ namespace InspectorManager.UI
 
         private void OnRotationUpdateCompleted(Core.RotationUpdateCompletedEvent evt)
         {
-            if (!_activeOverlays.TryGetValue(evt.UpdatedInspector, out var overlay)) return;
+            var inspector = evt.UpdatedInspector;
+            if (inspector == null) return;
+            if (!_activeOverlays.TryGetValue(inspector, out var overlay)) return;
 
             var button = overlay.Q<Button>(OverlayElementFactory.LockButtonName);
             if (button == null) return;
 
-            _flashingInspectors.Add(evt.UpdatedInspector);
+            // 連続選択でスケジュールが積み上がらないよう、終了時刻を延長するだけにする。
+            // 期限切れの検出は OnUpdate が行う。
+            _flashUntil[inspector] = EditorApplication.timeSinceStartup + (FlashDurationMs / 1000.0);
 
             // フラッシュエフェクト
             button.style.backgroundColor = new StyleColor(new Color(0.20f, 0.78f, 0.35f, 1f));
             button.style.borderBottomWidth = 2;
             button.style.borderBottomColor = new StyleColor(new Color(0.20f, 0.78f, 0.35f, 0.8f));
+        }
 
-            button.schedule.Execute(() => 
+        /// <summary>
+        /// 期限切れになったフラッシュを解除する。解除があった場合 true。
+        /// </summary>
+        private bool ExpireFinishedFlashes()
+        {
+            if (_flashUntil.Count == 0) return false;
+
+            var now = EditorApplication.timeSinceStartup;
+            List<EditorWindow> expired = null;
+
+            foreach (var kvp in _flashUntil)
             {
-                _flashingInspectors.Remove(evt.UpdatedInspector);
-                UpdateOverlay(evt.UpdatedInspector, -1); 
-            }).ExecuteLater(FlashDurationMs);
+                if (kvp.Value <= now)
+                {
+                    (expired ?? (expired = new List<EditorWindow>())).Add(kvp.Key);
+                }
+            }
 
-            RefreshOverlays();
+            if (expired == null) return false;
+
+            foreach (var inspector in expired)
+            {
+                _flashUntil.Remove(inspector);
+            }
+            return true;
         }
 
         private void OnUpdate()
         {
-            if (EditorApplication.timeSinceStartup - _lastUpdateTime < UpdateInterval) return;
+            // フラッシュの期限切れは間引かずに毎tick判定し、切れたら即座に再描画する
+            bool flashExpired = ExpireFinishedFlashes();
+
+            if (!flashExpired && EditorApplication.timeSinceStartup - _lastUpdateTime < UpdateInterval) return;
             _lastUpdateTime = EditorApplication.timeSinceStartup;
 
             if (_rotationLockController != null && _rotationLockController.IsEnabled)
@@ -112,17 +139,34 @@ namespace InspectorManager.UI
                     element?.RemoveFromHierarchy();
                 }
                 _activeOverlays.Remove(closed);
-                _flashingInspectors.Remove(closed);
+                _flashUntil.Remove(closed);
             }
 
             for (int i = 0; i < inspectors.Count; i++)
             {
-                // 固定番号（ウィンドウ順）を表示
+                // 固定番号（1始まり）を表示
                 UpdateOverlay(inspectors[i], i + 1);
             }
         }
 
-        private void UpdateOverlay(EditorWindow inspector, object index)
+        /// <summary>
+        /// Inspectorの固定番号（1始まり）を取得する。見つからない場合は0。
+        /// </summary>
+        private int GetWindowNumber(EditorWindow inspector)
+        {
+            var all = _inspectorService.GetAllInspectors();
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (all[i] == inspector) return i + 1;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// オーバーレイの生成・更新を行う。
+        /// </summary>
+        /// <param name="number">固定番号（1始まり）</param>
+        private void UpdateOverlay(EditorWindow inspector, int number)
         {
             if (inspector == null) return;
             var root = inspector.rootVisualElement;
@@ -144,7 +188,7 @@ namespace InspectorManager.UI
                 root.Insert(0, overlay);
             }
 
-            bool isFlashing = _flashingInspectors.Contains(inspector);
+            bool isFlashing = _flashUntil.ContainsKey(inspector);
             var isLocked = _inspectorService.IsLocked(inspector);
             var button = overlay.Q<Button>(OverlayElementFactory.LockButtonName);
             if (button == null) return;
@@ -161,7 +205,7 @@ namespace InspectorManager.UI
                     ? _localizationService.GetString("Overlay_Locked") 
                     : _localizationService.GetString("Overlay_Unlocked");
             }
-            button.text = _localizationService.GetString("Overlay_Format", index, statusText);
+            button.text = _localizationService.GetString("Overlay_Format", number, statusText);
 
             // フラッシュ中でなければ通常色を適用
             if (!isFlashing)
@@ -184,15 +228,7 @@ namespace InspectorManager.UI
 
         private void OnLockToggled(EditorWindow inspector)
         {
-            var allInspectors = _inspectorService.GetAllInspectors();
-            for (int i = 0; i < allInspectors.Count; i++)
-            {
-                if (allInspectors[i] == inspector)
-                {
-                    UpdateOverlay(inspector, i);
-                    break;
-                }
-            }
+            UpdateOverlay(inspector, GetWindowNumber(inspector));
         }
 
         private void UpdateNextBadge(VisualElement overlay, EditorWindow inspector)
@@ -219,7 +255,7 @@ namespace InspectorManager.UI
                 kvp.Value?.RemoveFromHierarchy();
             }
             _activeOverlays.Clear();
-            _flashingInspectors.Clear();
+            _flashUntil.Clear();
             
             // 念のため全Inspectorから検索して削除
             try
