@@ -56,14 +56,18 @@ namespace InspectorManager.UI
                 // クリアボタン
                 if (GUILayout.Button(Styles.TrashIcon, EditorStyles.toolbarButton, GUILayout.Width(28)))
                 {
-                    if (EditorUtility.DisplayDialog(
-                        _localizationService.GetString("History_Clear"),
-                        _localizationService.GetString("Confirm_ClearHistory"),
-                        _localizationService.GetString("Button_Clear"),
-                        _localizationService.GetString("Button_Cancel")))
+                    // モーダルダイアログとリスト変更を描画中に行うとレイアウトが崩れる
+                    EditorApplication.delayCall += () =>
                     {
-                        _historyService.ClearHistory();
-                    }
+                        if (EditorUtility.DisplayDialog(
+                            _localizationService.GetString("History_Clear"),
+                            _localizationService.GetString("Confirm_ClearHistory"),
+                            _localizationService.GetString("Button_Clear"),
+                            _localizationService.GetString("Button_Cancel")))
+                        {
+                            _historyService.ClearHistory();
+                        }
+                    };
                 }
 
                 GUILayout.Space(4);
@@ -147,22 +151,14 @@ namespace InspectorManager.UI
                     
                     if (GUI.Button(favBtnRect, Styles.FavoriteIcon, Styles.IconButton))
                     {
-                        if (obj != null)
-                        {
-                            _favoritesService.RemoveFavorite(obj);
-                            _feedback.Trigger(index, entry.ObjectName, false);
-                        }
+                        ToggleFavoriteDeferred(obj, index, entry.ObjectName, false);
                     }
                 }
                 else
                 {
                     if (GUILayout.Button(Styles.FavoriteEmptyIcon, Styles.IconButton))
                     {
-                        if (obj != null)
-                        {
-                            _favoritesService.AddFavorite(obj);
-                            _feedback.Trigger(index, entry.ObjectName, true);
-                        }
+                        ToggleFavoriteDeferred(obj, index, entry.ObjectName, true);
                     }
                 }
 
@@ -175,9 +171,12 @@ namespace InspectorManager.UI
                         $"Type: {entry.ObjectType}\nRecorded: {entry.RecordedAt:HH:mm:ss}"
                     );
 
-                    // ウィンドウ幅から固定要素の幅を引いた残りをクリック領域に割り当て
+                    // ウィンドウ幅から固定要素の幅を引いた残りをクリック領域に割り当てる。
+                    // BeginHorizontal が返す rect はレイアウトパスでは未確定なので、
+                    // 両パスで同じ値になる currentViewWidth を使う。
                     // 固定要素: 左パディング(6) + お気に入りアイコン(22) + 型名(60) + 右パディング(4) ≈ 92
-                    float availableWidth = rect.width - 92f;
+                    // スクロールバーとリストアイテムのマージン分も差し引く
+                    float availableWidth = EditorGUIUtility.currentViewWidth - 92f - 24f;
                     if (availableWidth < 80f) availableWidth = 80f;
 
                     if (GUILayout.Button(content, EditorStyles.label, GUILayout.Width(availableWidth)))
@@ -209,6 +208,26 @@ namespace InspectorManager.UI
                 GUILayout.Space(4);
             }
             EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// お気に入りの追加/削除を描画完了後に実行する。
+        /// 描画中に切り替えると、同じフレームの Layout パスと Repaint パスで
+        /// 星アイコンの分岐が変わり、レイアウトが崩れる。
+        /// </summary>
+        private void ToggleFavoriteDeferred(Object obj, int index, string objectName, bool add)
+        {
+            if (obj == null) return;
+
+            EditorApplication.delayCall += () =>
+            {
+                if (obj == null) return;
+
+                if (add) _favoritesService.AddFavorite(obj);
+                else _favoritesService.RemoveFavorite(obj);
+            };
+
+            _feedback.Trigger(index, objectName, add);
         }
     }
 }

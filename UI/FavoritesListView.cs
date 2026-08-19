@@ -93,10 +93,11 @@ namespace InspectorManager.UI
                 // 削除ボタン（星アイコン）
                 if (GUILayout.Button(Styles.FavoriteIcon, Styles.IconButton))
                 {
+                    // 描画中にリストを変更すると行数が変わりレイアウトが崩れる
                     var obj = entry.GetObject();
                     if (obj != null)
                     {
-                        _favoritesService.RemoveFavorite(obj);
+                        EditorApplication.delayCall += () => _favoritesService.RemoveFavorite(obj);
                     }
                 }
 
@@ -167,7 +168,9 @@ namespace InspectorManager.UI
                     if (rect.Contains(evt.mousePosition) && _dragFromIndex >= 0 && _dragFromIndex != index)
                     {
                         DragAndDrop.AcceptDrag();
-                        _favoritesService.ReorderFavorite(_dragFromIndex, index);
+                        int from = _dragFromIndex;
+                        int to = index;
+                        EditorApplication.delayCall += () => _favoritesService.ReorderFavorite(from, to);
                         _dragFromIndex = -1;
                         evt.Use();
                     }

@@ -51,8 +51,11 @@ namespace InspectorManager.UI
                 return;
             }
 
-            // UI描画前にリストを最新の状態に同期
-            if (_rotationLockController != null)
+            // リストの同期はレイアウトパスでのみ行う。
+            // 描画中に行数が変わると EditorGUILayout が Layout/Repaint 間の
+            // コントロール数不一致を検出して例外を投げる。
+            // （定期同期は InspectorOverlayController が別途行っている）
+            if (_rotationLockController != null && Event.current.type == EventType.Layout)
             {
                 _rotationLockController.SyncInspectorList();
             }
@@ -179,14 +182,16 @@ namespace InspectorManager.UI
             var addLabel = _localizationService?.GetString("Button_AddInspector") ?? "+ Add Inspector";
             if (GUILayout.Button(addLabel, Styles.ActionButton))
             {
-                var newInspector = InspectorReflection.CreateNewInspector();
-                if (newInspector != null && autoAddToRotation)
+                // ウィンドウ生成はリスト構成を変えるため、描画完了後に実行する
+                var controller = _rotationLockController;
+                EditorApplication.delayCall += () =>
                 {
-                    EditorApplication.delayCall += () =>
+                    var newInspector = InspectorReflection.CreateNewInspector();
+                    if (newInspector != null && autoAddToRotation && controller != null)
                     {
-                        _rotationLockController.AddManagedInspector(newInspector);
-                    };
-                }
+                        controller.AddManagedInspector(newInspector);
+                    }
+                };
             }
 
             GUILayout.Space(12);
@@ -351,7 +356,11 @@ namespace InspectorManager.UI
 
                     if (GUILayout.Button(new GUIContent(btnText, btnTooltip), Styles.MiniButton, GUILayout.Width(28)))
                     {
-                        _rotationLockController.SetExcluded(inspector, !isExcludedItem);
+                        // 除外の切り替えは行数を変えるため描画完了後に実行する
+                        var controller = _rotationLockController;
+                        var target = inspector;
+                        bool exclude = !isExcludedItem;
+                        EditorApplication.delayCall += () => controller?.SetExcluded(target, exclude);
                     }
                 }
 
@@ -359,7 +368,12 @@ namespace InspectorManager.UI
                 var closeContent = new GUIContent("✕", _localizationService.GetString("Tooltip_CloseInspector"));
                 if (GUILayout.Button(closeContent, Styles.MiniButton, GUILayout.Width(28)))
                 {
-                    inspector.Close();
+                    // ウィンドウ破棄も同フレームで行うとレイアウトが崩れる
+                    var target = inspector;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (target != null) target.Close();
+                    };
                 }
 
                 // フォーカスボタン

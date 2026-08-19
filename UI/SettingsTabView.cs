@@ -254,11 +254,12 @@ namespace InspectorManager.UI
             {
                 if (GUILayout.Button(_localizationService.GetString("Button_CleanHistory"), Styles.ActionButton))
                 {
-                    _historyController?.CleanupAll();
+                    EditorApplication.delayCall += () => _historyController?.CleanupAll();
                 }
                 if (GUILayout.Button(_localizationService.GetString("Button_ResetAll"), Styles.DangerButton))
                 {
-                    PerformReset();
+                    // モーダルダイアログと設定の総入れ替えを描画中に行うとレイアウトが崩れる
+                    EditorApplication.delayCall += PerformReset;
                 }
             }
             GUILayout.Space(12);
