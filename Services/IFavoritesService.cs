@@ -37,5 +37,10 @@ namespace InspectorManager.Services
         /// 無効なエントリを削除
         /// </summary>
         void CleanupInvalidEntries();
+
+        /// <summary>
+        /// お気に入りをすべて削除
+        /// </summary>
+        void ClearAll();
     }
 }

@@ -12,6 +12,7 @@ namespace InspectorManager.Services
     public class HistoryService : IHistoryService
     {
         private readonly List<HistoryEntry> _history = new List<HistoryEntry>();
+        private readonly IReadOnlyList<HistoryEntry> _historyView;
         private readonly IPersistenceService _persistence;
         private int _currentIndex = -1;
         private int _maxHistoryCount = 50;
@@ -36,13 +37,18 @@ namespace InspectorManager.Services
 
         public HistoryService(IPersistenceService persistence)
         {
+            _historyView = _history.AsReadOnly();
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             LoadHistory();
         }
 
+        /// <summary>
+        /// 履歴一覧を取得する。
+        /// 返されるのは内部リストのライブビューであり、反復中にサービスを変更してはならない。
+        /// </summary>
         public IReadOnlyList<HistoryEntry> GetHistory()
         {
-            return _history.AsReadOnly();
+            return _historyView;
         }
 
         public void RecordSelection(UnityEngine.Object obj)

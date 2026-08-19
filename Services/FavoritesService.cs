@@ -12,19 +12,25 @@ namespace InspectorManager.Services
     public class FavoritesService : IFavoritesService
     {
         private readonly List<FavoriteEntry> _favorites = new List<FavoriteEntry>();
+        private readonly IReadOnlyList<FavoriteEntry> _favoritesView;
         private readonly IPersistenceService _persistence;
 
         private const string FavoritesKey = "Favorites";
 
         public FavoritesService(IPersistenceService persistence)
         {
+            _favoritesView = _favorites.AsReadOnly();
             _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
             LoadFavorites();
         }
 
+        /// <summary>
+        /// お気に入り一覧を取得する。
+        /// 返されるのは内部リストのライブビューであり、反復中にサービスを変更してはならない。
+        /// </summary>
         public IReadOnlyList<FavoriteEntry> GetFavorites()
         {
-            return _favorites.AsReadOnly();
+            return _favoritesView;
         }
 
         public void AddFavorite(UnityEngine.Object obj)
@@ -75,6 +81,15 @@ namespace InspectorManager.Services
             _favorites.Insert(toIndex, item);
 
             UpdateSortOrders();
+            SaveFavorites();
+            EventBus.Instance.Publish(new FavoritesUpdatedEvent());
+        }
+
+        public void ClearAll()
+        {
+            if (_favorites.Count == 0) return;
+
+            _favorites.Clear();
             SaveFavorites();
             EventBus.Instance.Publish(new FavoritesUpdatedEvent());
         }

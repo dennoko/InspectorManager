@@ -286,18 +286,7 @@ namespace InspectorManager.UI
             }
 
             _historyService?.ClearHistory();
-            var favorites = _favoritesService?.GetFavorites();
-            if (favorites != null)
-            {
-                foreach (var fav in favorites)
-                {
-                    var obj = fav.GetObject();
-                    if (obj != null)
-                    {
-                        _favoritesService.RemoveFavorite(obj);
-                    }
-                }
-            }
+            _favoritesService?.ClearAll();
             _settings = InspectorManagerSettings.CreateDefault();
             _settings.Language = _localizationService.CurrentLanguage;
             OnSettingsChanged?.Invoke();
