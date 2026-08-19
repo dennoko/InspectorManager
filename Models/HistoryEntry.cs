@@ -10,6 +10,11 @@ namespace InspectorManager.Models
     public class HistoryEntry
     {
         [SerializeField] private string _objectGuid;
+
+        // サブアセット（FBX内のメッシュなど）を区別するためのローカルファイルID。
+        // 旧データには存在しないため、0 の場合はメインアセットとして扱う
+        [SerializeField] private long _localId;
+
         [SerializeField] private int _instanceId;
         [SerializeField] private string _objectName;
         [SerializeField] private string _objectType;
@@ -50,15 +55,17 @@ namespace InspectorManager.Models
             _objectType = obj.GetType().Name;
             _recordedAtTicks = DateTime.Now.Ticks;
 
-            // アセットの場合はGUIDを取得
-            var assetPath = UnityEditor.AssetDatabase.GetAssetPath(obj);
-            if (!string.IsNullOrEmpty(assetPath))
+            // アセットの場合はGUIDとローカルファイルIDを取得
+            if (UnityEditor.AssetDatabase.TryGetGUIDAndLocalFileIdentifier(
+                    obj, out var guid, out long localId))
             {
-                _objectGuid = UnityEditor.AssetDatabase.AssetPathToGUID(assetPath);
+                _objectGuid = guid;
+                _localId = localId;
             }
             else
             {
                 _objectGuid = string.Empty;
+                _localId = 0;
             }
         }
 
@@ -67,21 +74,17 @@ namespace InspectorManager.Models
         /// </summary>
         public UnityEngine.Object GetObject()
         {
-            // まずInstanceIDで検索（セッション内なら高速）
-            var obj = UnityEditor.EditorUtility.InstanceIDToObject(_instanceId);
-            if (obj != null) return obj;
-
-            // GUIDがあればアセットとして検索
+            // アセットはGUIDを最優先で解決する。
+            // InstanceID はエディタのセッションごとに振り直されるため、
+            // 保存済みのIDを先に引くと、次のセッションで再利用されたIDが
+            // まったく別のオブジェクトを返してしまう。
             if (!string.IsNullOrEmpty(_objectGuid))
             {
-                var path = UnityEditor.AssetDatabase.GUIDToAssetPath(_objectGuid);
-                if (!string.IsNullOrEmpty(path))
-                {
-                    return UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
-                }
+                return AssetEntryResolver.Resolve(_objectGuid, _localId);
             }
 
-            return null;
+            // GUIDを持たない＝シーン上のオブジェクト。InstanceIDでのみ解決できる
+            return UnityEditor.EditorUtility.InstanceIDToObject(_instanceId);
         }
 
         /// <summary>
@@ -94,24 +97,29 @@ namespace InspectorManager.Models
 
         public override bool Equals(object obj)
         {
-            if (obj is HistoryEntry other)
-            {
-                // 同じInstanceIDなら同じ
-                if (_instanceId == other._instanceId && _instanceId != 0)
-                    return true;
+            if (!(obj is HistoryEntry other)) return false;
 
-                // 同じGUIDなら同じ
-                if (!string.IsNullOrEmpty(_objectGuid) &&
-                    _objectGuid == other._objectGuid)
-                    return true;
+            bool hasGuid = !string.IsNullOrEmpty(_objectGuid);
+            bool otherHasGuid = !string.IsNullOrEmpty(other._objectGuid);
+
+            // 片方だけがアセットなら別物。
+            // InstanceID を先に見ると、セッションを跨いで再利用されたIDが
+            // 無関係のオブジェクトと一致してしまうため、GUIDを優先する。
+            if (hasGuid || otherHasGuid)
+            {
+                return hasGuid && otherHasGuid
+                    && _objectGuid == other._objectGuid
+                    && _localId == other._localId;
             }
-            return false;
+
+            // どちらもシーンオブジェクト。InstanceIDでのみ判定できる
+            return _instanceId != 0 && _instanceId == other._instanceId;
         }
 
         public override int GetHashCode()
         {
             if (!string.IsNullOrEmpty(_objectGuid))
-                return _objectGuid.GetHashCode();
+                return _objectGuid.GetHashCode() ^ _localId.GetHashCode();
             return _instanceId.GetHashCode();
         }
     }
