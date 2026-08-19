@@ -34,7 +34,7 @@ namespace InspectorManager.Services
             }
         }
 
-public void Initialize(string languageCode)
+        public void Initialize(string languageCode)
         {
             _currentLanguage = string.IsNullOrEmpty(languageCode) ? FallbackLanguage : languageCode;
             LoadTranslations();

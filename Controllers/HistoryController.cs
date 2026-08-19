@@ -16,7 +16,7 @@ namespace InspectorManager.Controllers
         // 「すべてリセット」で設定インスタンスごと差し替わるため readonly にはできない
         private InspectorManagerSettings _settings;
 
-public HistoryController(
+        public HistoryController(
             IHistoryService historyService,
             IFavoritesService favoritesService,
             InspectorManagerSettings settings)
@@ -25,8 +25,8 @@ public HistoryController(
             _favoritesService = favoritesService;
             _settings = settings;
 
-            // 選択変更イベントを購読
-            Selection.selectionChanged += OnSelectionChanged;
+            // 選択変更イベントを購読（Selection の購読は SelectionCoordinator に集約）
+            Core.EventBus.Instance.Subscribe<Core.SelectionChangedEvent>(OnSelectionChanged);
 
             // アセットの追加/削除/移動で履歴・お気に入りのエントリが無効になりうる
             EditorApplication.projectChanged += OnProjectChanged;
@@ -64,15 +64,15 @@ public HistoryController(
         {
             if (_disposed) return;
             _disposed = true;
-            Selection.selectionChanged -= OnSelectionChanged;
+            Core.EventBus.Instance.Unsubscribe<Core.SelectionChangedEvent>(OnSelectionChanged);
             EditorApplication.projectChanged -= OnProjectChanged;
         }
 
-        private void OnSelectionChanged()
+        private void OnSelectionChanged(Core.SelectionChangedEvent evt)
         {
             if (_settings == null) return;
 
-            var activeObject = Selection.activeObject;
+            var activeObject = evt.ActiveObject;
             if (activeObject == null) return;
 
             // 設定に基づいて記録するかどうかを判断

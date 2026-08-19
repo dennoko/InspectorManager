@@ -154,7 +154,7 @@ namespace InspectorManager.Controllers
             return _rotationOrder[0] == inspector;
         }
 
-public RotationLockController(
+        public RotationLockController(
             IInspectorWindowService inspectorService,
             IPersistenceService persistence)
         {
@@ -164,7 +164,8 @@ public RotationLockController(
 
             LoadSettings();
             RestoreRuntimeState();
-            Selection.selectionChanged += OnSelectionChanged;
+            // Selection の購読は SelectionCoordinator に集約されている
+            EventBus.Instance.Subscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Subscribe<HistoryNavigationEvent>(OnHistoryNavigation);
         }
 
@@ -173,7 +174,7 @@ public RotationLockController(
             if (_disposed) return;
             _disposed = true;
 
-            Selection.selectionChanged -= OnSelectionChanged;
+            EventBus.Instance.Unsubscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Unsubscribe<HistoryNavigationEvent>(OnHistoryNavigation);
             _rotationOrder.Clear();
             _knownInspectors.Clear();
@@ -209,7 +210,7 @@ public RotationLockController(
             foreach (var inspector in inspectors)
             {
                 _knownInspectors.Add(inspector);
-// 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
+                // 除外中のInspectorはロックだけ維持し、ローテーション対象には含めない。
                 // （以前は無条件に追加していたため、OFF→ONするだけで除外設定が壊れていた）
                 _inspectorService.SetLocked(inspector, true);
 
@@ -331,7 +332,7 @@ public RotationLockController(
             return _exclusionManager.IsExcluded(inspector);
         }
 
-public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWindow> excluded, out List<EditorWindow> unmanaged)
+        public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWindow> excluded, out List<EditorWindow> unmanaged)
         {
             var all = _inspectorService.GetAllInspectors();
             rotation = new List<EditorWindow>(_rotationOrder);
@@ -351,7 +352,7 @@ public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWi
             }
         }
 
-/// <summary>
+        /// <summary>
         /// Inspector数の変更を検出して対応
         /// </summary>
         public void SyncInspectorList()
@@ -475,14 +476,14 @@ public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWi
             return inspector != null && _userUnlocked.Contains(inspector);
         }
 
-private void OnSelectionChanged()
+        private void OnSelectionChanged(SelectionChangedEvent evt)
         {
             if (!_isEnabled) return;
             if (_isPaused) return;
             if (_isUpdating) return;
 
             // Unity標準と同じマルチ編集表示を再現するため、選択集合全体を扱う
-            var newSelection = Selection.objects;
+            var newSelection = evt.SelectedObjects;
             if (newSelection == null || newSelection.Length == 0)
             {
                 // 選択が解除された。記録を消しておかないと、同じオブジェクトを
@@ -639,7 +640,7 @@ private void OnSelectionChanged()
             }
         }
 
-/// <summary>
+        /// <summary>
         /// ローテーション順序内のInspectorを並び替える（参照指定）。
         /// ドラッグ中にリスト構成が変化してもインデックスがずれないよう、
         /// UI側はこちらを使う。

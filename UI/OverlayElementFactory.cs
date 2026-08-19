@@ -70,7 +70,7 @@ namespace InspectorManager.UI
             return overlay;
         }
 
-/// <summary>
+        /// <summary>
         /// NEXTバッジ用のラベルを生成
         /// </summary>
         public static Label CreateNextBadge(string text)

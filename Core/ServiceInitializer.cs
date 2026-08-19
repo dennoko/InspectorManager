@@ -17,6 +17,7 @@ namespace InspectorManager.Core
             public IHistoryService HistoryService;
             public IFavoritesService FavoritesService;
             public InspectorManagerSettings Settings;
+            public SelectionCoordinator SelectionCoordinator;
         }
 
         /// <summary>
@@ -43,6 +44,11 @@ namespace InspectorManager.Core
             var favorites = new FavoritesService(persistence);
             ServiceLocator.Instance.Register<IFavoritesService, FavoritesService>(favorites);
 
+            // Selection の購読はここに一本化する。
+            // ServiceLocator.Clear() が Dispose するので購読が残ることはない。
+            var selection = new SelectionCoordinator();
+            ServiceLocator.Instance.Register(selection);
+
             // 設定の読み込み
             var settings = persistence.Load("Settings", InspectorManagerSettings.CreateDefault());
 
@@ -56,7 +62,8 @@ namespace InspectorManager.Core
                 InspectorService = inspector,
                 HistoryService = history,
                 FavoritesService = favorites,
-                Settings = settings
+                Settings = settings,
+                SelectionCoordinator = selection
             };
         }
     }

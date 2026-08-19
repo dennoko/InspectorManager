@@ -107,11 +107,16 @@ namespace InspectorManager.Core
     }
 
     /// <summary>
-    /// 選択が変更された
+    /// 選択が変更された。
+    /// SelectionCoordinator が Selection.selectionChanged を受けて発行する。
     /// </summary>
     public struct SelectionChangedEvent
     {
+        /// <summary>選択集合（Selection.objects）</summary>
         public UnityEngine.Object[] SelectedObjects { get; set; }
+
+        /// <summary>代表オブジェクト（Selection.activeObject）</summary>
+        public UnityEngine.Object ActiveObject { get; set; }
     }
 
     /// <summary>

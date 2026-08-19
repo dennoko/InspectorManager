@@ -13,7 +13,7 @@ namespace InspectorManager.Models
         /// <summary>既定のローテーションモード（RotationMode.History）</summary>
         private const int DefaultRotationMode = (int)Controllers.RotationMode.History;
 
-[SerializeField] private int _maxHistoryCount = 50;
+        [SerializeField] private int _maxHistoryCount = 50;
         [SerializeField] private bool _recordSceneObjects = true;
         [SerializeField] private bool _recordAssets = true;
         [SerializeField] private bool _autoCleanInvalidHistory = true;
@@ -72,7 +72,7 @@ namespace InspectorManager.Models
             set => _rotationMode = (int)value;
         }
 
-/// <summary>
+        /// <summary>
         /// 履歴の最大保持数
         /// </summary>
         public int MaxHistoryCount
