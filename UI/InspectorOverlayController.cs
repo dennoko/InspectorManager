@@ -110,11 +110,8 @@ namespace InspectorManager.UI
             if (!flashExpired && EditorApplication.timeSinceStartup - _lastUpdateTime < UpdateInterval) return;
             _lastUpdateTime = EditorApplication.timeSinceStartup;
 
-            if (_rotationLockController != null && _rotationLockController.IsEnabled)
-            {
-                _rotationLockController.SyncInspectorList();
-            }
-
+            // オーバーレイは表示専用。ローテーションの内部状態は
+            // RotationLockController 自身の定期ティックが追従させる。
             RefreshOverlays();
         }
 

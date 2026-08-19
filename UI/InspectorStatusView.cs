@@ -27,7 +27,7 @@ namespace InspectorManager.UI
         private const double HighlightDuration = 1.2;
 
         // ドラッグ&ドロップ用。
-        // ドラッグ中に SyncInspectorList でリスト構成が変わってもずれないよう、
+        // ドラッグ中に Reconcile でリスト構成が変わってもずれないよう、
         // インデックスではなくウィンドウ参照で保持する
         private EditorWindow _dragFromInspector;
         private EditorWindow _dragOverInspector;
@@ -58,14 +58,10 @@ namespace InspectorManager.UI
                 return;
             }
 
-            // リストの同期はレイアウトパスでのみ行う。
+            // ここでは状態を変更しない（読み取りのみ）。
+            // 内部状態の追従は RotationLockController 自身の定期ティックが行う。
             // 描画中に行数が変わると EditorGUILayout が Layout/Repaint 間の
-            // コントロール数不一致を検出して例外を投げる。
-            // （定期同期は InspectorOverlayController が別途行っている）
-            if (_rotationLockController != null && Event.current.type == EventType.Layout)
-            {
-                _rotationLockController.SyncInspectorList();
-            }
+            // コントロール数不一致を検出して例外を投げるため。
 
             // 固定番号の算出用に1回だけ取得する
             _windowOrderCache = _inspectorService.GetAllInspectors();

@@ -56,6 +56,10 @@ namespace InspectorManager.Controllers
         // これによる選択変更はローテーションを進めず、現在の表示を差し替えるだけにする
         private UnityEngine.Object _navigationTarget;
 
+        // 状態同期（Reconcile）の実行間隔
+        private const double ReconcileInterval = 0.5;
+        private double _lastReconcileTime;
+
         // delayCallタイムアウト管理
         private double _updateStartTime;
         private const double UpdateTimeout = 1.0;
@@ -167,6 +171,11 @@ namespace InspectorManager.Controllers
             // Selection の購読は SelectionCoordinator に集約されている
             EventBus.Instance.Subscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Subscribe<HistoryNavigationEvent>(OnHistoryNavigation);
+
+            // 状態の同期はこのコントローラ自身が所有するティックからのみ行う。
+            // 以前は描画パスやオーバーレイの更新から呼ばれており、
+            // 「誰が状態を変えるのか」が追いにくくなっていた。
+            EditorApplication.update += OnEditorUpdate;
         }
 
         public void Dispose()
@@ -176,6 +185,7 @@ namespace InspectorManager.Controllers
 
             EventBus.Instance.Unsubscribe<SelectionChangedEvent>(OnSelectionChanged);
             EventBus.Instance.Unsubscribe<HistoryNavigationEvent>(OnHistoryNavigation);
+            EditorApplication.update -= OnEditorUpdate;
             _rotationOrder.Clear();
             _knownInspectors.Clear();
             _userUnlocked.Clear();
@@ -225,7 +235,7 @@ namespace InspectorManager.Controllers
 
         public void SetExcluded(EditorWindow inspector, bool isExcluded)
         {
-            _exclusionManager.SetExcluded(inspector, isExcluded, _rotationOrder, SyncInspectorList);
+            _exclusionManager.SetExcluded(inspector, isExcluded, _rotationOrder, Reconcile);
             SaveRuntimeState();
         }
 
@@ -353,17 +363,34 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
-        /// Inspector数の変更を検出して対応
+        /// 定期ティック。状態の変更はここか、選択変更・明示的な操作からのみ行う。
         /// </summary>
-        public void SyncInspectorList()
+        private void OnEditorUpdate()
+        {
+            if (_disposed || !_isEnabled) return;
+
+            if (EditorApplication.timeSinceStartup - _lastReconcileTime < ReconcileInterval) return;
+            _lastReconcileTime = EditorApplication.timeSinceStartup;
+
+            Reconcile();
+        }
+
+        /// <summary>
+        /// Inspectorの開閉やユーザーによるロック変更を検出し、内部状態を追従させる。
+        ///
+        /// これは状態を変更するメソッドである。UIの描画パスから呼んではならない
+        /// （Layout/Repaint 間で行数が変わり EditorGUILayout が例外を出す）。
+        /// 表示側は GetInspectorLists() で読み取りのみ行うこと。
+        /// </summary>
+        public void Reconcile()
         {
             var currentInspectors = _inspectorService.GetAllInspectors();
 
             // 閉じられたInspectorを各リストから除去
-            _rotationOrder.RemoveAll(i => !currentInspectors.Contains(i));
-            _knownInspectors.RemoveAll(i => !currentInspectors.Contains(i));
-            _userUnlocked.RemoveAll(i => !currentInspectors.Contains(i));
-            _exclusionManager.CleanupInvalid();
+            bool changed = _rotationOrder.RemoveAll(i => !currentInspectors.Contains(i)) > 0;
+            changed |= _knownInspectors.RemoveAll(i => !currentInspectors.Contains(i)) > 0;
+            changed |= _userUnlocked.RemoveAll(i => !currentInspectors.Contains(i)) > 0;
+            changed |= _exclusionManager.CleanupInvalid() > 0;
             CleanupLastAssigned(currentInspectors);
 
             if (_pendingUnlockTarget != null && !currentInspectors.Contains(_pendingUnlockTarget))
@@ -397,6 +424,7 @@ namespace InspectorManager.Controllers
                     _knownInspectors.Add(inspector);
                     _inspectorService.SetLocked(inspector, true);
                     if (!_rotationOrder.Contains(inspector)) _rotationOrder.Add(inspector);
+                    changed = true;
                     continue;
                 }
 
@@ -408,19 +436,22 @@ namespace InspectorManager.Controllers
                     // ローテーションから外して通常の選択追従に戻す。
                     if (!_userUnlocked.Contains(inspector)) _userUnlocked.Add(inspector);
                     _rotationOrder.Remove(inspector);
+                    changed = true;
                     continue;
                 }
 
                 // 再びロックされたらローテーションに復帰させる
-                _userUnlocked.Remove(inspector);
+                changed |= _userUnlocked.Remove(inspector);
 
                 if (!_rotationOrder.Contains(inspector))
                 {
                     _rotationOrder.Add(inspector);
+                    changed = true;
                 }
             }
 
-            SaveRuntimeState();
+            // 毎ティック書き込まないよう、実際に変化があったときだけ保存する
+            if (changed) SaveRuntimeState();
         }
 
         /// <summary>
@@ -507,7 +538,7 @@ namespace InspectorManager.Controllers
             if (IsSameSelection(newSelection, _lastKnownSelection)) return;
             _lastKnownSelection = newSelection;
 
-            SyncInspectorList();
+            Reconcile();
             if (_rotationOrder.Count == 0) return;
 
             if (Mode == RotationMode.History)
@@ -597,7 +628,7 @@ namespace InspectorManager.Controllers
                 }
 
                 // フォールバック（旧方式）
-                // 一時アンロック中であることを記録し、SyncInspectorList が
+                // 一時アンロック中であることを記録し、Reconcile が
                 // 「ユーザーによるアンロック」と誤検出しないようにする
                 _pendingUnlockTarget = targetInspector;
                 // アンロックするとUnity側が表示対象を差し替えるためキャッシュは無効
@@ -693,7 +724,7 @@ namespace InspectorManager.Controllers
             }
 
             // 除外リストから確実に除去
-            _exclusionManager.SetExcluded(inspector, false, _rotationOrder, SyncInspectorList);
+            _exclusionManager.SetExcluded(inspector, false, _rotationOrder, Reconcile);
 
             SaveRuntimeState();
         }

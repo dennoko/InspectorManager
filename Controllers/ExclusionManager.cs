@@ -91,9 +91,10 @@ namespace InspectorManager.Controllers
         /// <summary>
         /// 除外リストから無効な参照を除去
         /// </summary>
-        public void CleanupInvalid()
+        /// <returns>除去した件数</returns>
+        public int CleanupInvalid()
         {
-            _excludedWindows.RemoveAll(w => w == null);
+            return _excludedWindows.RemoveAll(w => w == null);
         }
     }
 }
