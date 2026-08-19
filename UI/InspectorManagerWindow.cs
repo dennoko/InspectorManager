@@ -115,7 +115,9 @@ namespace InspectorManager.UI
             titleContent = new GUIContent("Inspector Manager");
 
             // コントローラーの初期化
-            _rotationLockController = new RotationLockController(_inspectorService, _persistenceService);
+            // 履歴モードの初期表示を埋めるため、選択履歴も渡す
+            _rotationLockController = new RotationLockController(
+                _inspectorService, _persistenceService, _historyService);
             _rotationLockController.ApplySettings(_settings);
             // HotkeyControllerからアクセスできるようServiceLocatorに登録
             ServiceLocator.Instance.Register(_rotationLockController);

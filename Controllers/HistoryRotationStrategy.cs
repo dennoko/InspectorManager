@@ -22,22 +22,34 @@ namespace InspectorManager.Controllers
             var order = context.RotationOrder;
             if (order.Count == 0) return;
 
-            // 履歴の戻る/進む由来の場合は積まずに先頭を差し替える。
-            // 積むと同じオブジェクトが重複し、最も古い履歴が押し出されてしまう。
-            if (isNavigation && _history.Count > 0)
-            {
-                _history[0] = selection;
-            }
-            else
-            {
-                _history.Insert(0, selection);
-            }
+            // 履歴の戻る/進む由来でも同じように積む。
+            // 「先頭だけ差し替える」方式だと、戻った先が既に2番目にある場合に
+            // 1番目と2番目が同じものになってしまう。
+            _history.Insert(0, selection);
+
+            // 同じ対象が複数のInspectorに並ぶことに意味はないので、
+            // 後方にある同一の履歴は取り除く。
+            // これで「戻る」で重複するケースも、A→B→A と選び直したときに
+            // 1番目と3番目が同じになるケースも同時に防げる。
+            RemoveDuplicatesAfterHead();
 
             // 破棄済みオブジェクトを取り除いて詰める。
             // 詰めずにスキップすると、そのInspectorだけ古い表示が残り
             // 「最新／1つ前／2つ前」の対応関係が崩れてしまう。
             Compact();
             Trim(order.Count + HistoryMargin);
+
+            ApplyLayout(context);
+
+            context.NotifyUpdated(order[0], selection);
+        }
+
+        /// <summary>
+        /// 現在の履歴をそのままInspectorへ割り当てる（履歴は積まない）。
+        /// </summary>
+        public void ApplyLayout(IRotationContext context)
+        {
+            var order = context.RotationOrder;
 
             for (int i = 0; i < order.Count; i++)
             {
@@ -46,26 +58,68 @@ namespace InspectorManager.Controllers
                 // 内容が変わっていないInspectorは Assign 側でスキップされる
                 context.Assign(order[i], _history[i]);
             }
-
-            context.NotifyUpdated(order[0], selection);
         }
 
-        public void Seed(UnityEngine.Object[] selection)
+        public void Seed(IReadOnlyList<UnityEngine.Object[]> recent)
         {
             _history.Clear();
+            if (recent == null) return;
 
-            // ローテーション開始時、各Inspectorはその時点の選択を表示している。
-            // これを履歴の先頭として扱わないと、次の選択で
-            // 「2番目のInspectorに1つ前を出す」対応関係が1つずれる。
-            if (selection != null && selection.Length > 0)
+            // ローテーション開始時、全Inspectorはその時点の選択を表示している。
+            // ここで過去の選択を種として入れておかないと、2番目以降のInspectorは
+            // 履歴が溜まるまで開始時の対象を表示したままになり、
+            // 「2番目と3番目が同じ」状態になる。
+            for (int i = 0; i < recent.Count; i++)
             {
-                _history.Add(selection);
+                var entry = recent[i];
+                if (entry == null || entry.Length == 0) continue;
+                if (IndexOf(entry) >= 0) continue;
+
+                _history.Add(entry);
             }
         }
 
         public void Reset()
         {
             _history.Clear();
+        }
+
+        /// <summary>
+        /// 先頭と同じ内容の履歴を後方から取り除く
+        /// </summary>
+        private void RemoveDuplicatesAfterHead()
+        {
+            if (_history.Count < 2) return;
+
+            var head = _history[0];
+            for (int i = _history.Count - 1; i >= 1; i--)
+            {
+                if (IsSameSelection(_history[i], head)) _history.RemoveAt(i);
+            }
+        }
+
+        private int IndexOf(UnityEngine.Object[] entry)
+        {
+            for (int i = 0; i < _history.Count; i++)
+            {
+                if (IsSameSelection(_history[i], entry)) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 2つの選択集合が同一かどうか（順序も含めて比較）
+        /// </summary>
+        private static bool IsSameSelection(UnityEngine.Object[] a, UnityEngine.Object[] b)
+        {
+            if (a == null || b == null) return ReferenceEquals(a, b);
+            if (a.Length != b.Length) return false;
+
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
 
         private void Trim(int maxCount)

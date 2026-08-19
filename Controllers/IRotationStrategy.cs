@@ -46,10 +46,17 @@ namespace InspectorManager.Controllers
 
         /// <summary>
         /// ローテーション開始時の状態を与える。
-        /// 開始直後は全Inspectorがその時の選択を表示しているため、
-        /// それを初期状態として扱わないと表示と内部状態がずれる。
+        /// 開始直後は全Inspectorが同じ（＝その時の選択）を表示しているため、
+        /// 直近の選択履歴を種として渡し、2番目以降の表示を埋められるようにする。
         /// </summary>
-        void Seed(UnityEngine.Object[] selection);
+        /// <param name="recent">新しい順に並んだ直近の選択集合</param>
+        void Seed(IReadOnlyList<UnityEngine.Object[]> recent);
+
+        /// <summary>
+        /// 現在の内部状態をそのままInspectorへ割り当てる（履歴は積まない）。
+        /// Seed の直後や、モード切替の直後に表示を揃えるために使う。
+        /// </summary>
+        void ApplyLayout(IRotationContext context);
 
         /// <summary>内部状態を破棄する（ローテーション終了・モード切替時）</summary>
         void Reset();

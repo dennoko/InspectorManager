@@ -33,6 +33,10 @@ namespace InspectorManager.Controllers
     {
         private readonly IInspectorWindowService _inspectorService;
         private readonly IPersistenceService _persistence;
+
+        // 履歴モードの初期表示を埋めるための選択履歴（無くても動作する）
+        private readonly IHistoryService _historyService;
+
         private readonly ExclusionManager _exclusionManager;
 
         private bool _isEnabled;
@@ -59,6 +63,11 @@ namespace InspectorManager.Controllers
         // 更新中に届いて処理できなかった選択。更新完了後に取りこぼさず反映する
         private UnityEngine.Object[] _deferredSelection;
         private bool _deferredIsNavigation;
+
+        // 明示的な配置の組み直しを予約中。
+        // ライフサイクル復帰時の「表示から内部状態を作り直す」処理に
+        // 上書きさせないための目印
+        private bool _layoutApplyQueued;
 
         // レガシー経路で更新のため一時的にアンロック中のInspector
         private EditorWindow _pendingUnlockTarget;
@@ -123,7 +132,13 @@ namespace InspectorManager.Controllers
                 // どのInspectorに何を出すかの対応が変わるため、
                 // 「内容が同じなら再構築しない」判定に使うキャッシュは捨てる
                 _lastAssigned.Clear();
-                if (_isEnabled) _strategy.Seed(Selection.objects);
+
+                if (!_isEnabled) return;
+
+                _strategy.Seed(BuildSeedHistory());
+                // このセッターは設定タブの描画中から呼ばれうる。
+                // Inspectorの作り直しをGUIパスの中で走らせないよう遅延させる。
+                ScheduleApplyLayout();
             }
         }
 
@@ -208,10 +223,12 @@ namespace InspectorManager.Controllers
 
         public RotationLockController(
             IInspectorWindowService inspectorService,
-            IPersistenceService persistence)
+            IPersistenceService persistence,
+            IHistoryService historyService = null)
         {
             _inspectorService = inspectorService;
             _persistence = persistence;
+            _historyService = historyService;
             _exclusionManager = new ExclusionManager(inspectorService);
 
             LoadSettings();
@@ -306,8 +323,11 @@ namespace InspectorManager.Controllers
                 }
             }
 
-            // 戦略にも開始時の状態を伝えないと、内部の履歴と実際の表示がずれる
-            _strategy.Seed(_lastKnownSelection);
+            // 開始直後は全Inspectorが同じ対象（現在の選択）を表示している。
+            // 直近の選択履歴を種として渡し、2番目以降にそれを割り当てることで
+            // 「2番目と3番目が同じ」状態を解消する。
+            _strategy.Seed(BuildSeedHistory());
+            ScheduleApplyLayout();
 
             SaveRuntimeState();
         }
@@ -595,6 +615,117 @@ namespace InspectorManager.Controllers
         }
 
         /// <summary>
+        /// 戦略に渡す初期履歴を組み立てる（新しい順）。
+        ///
+        /// 先頭は現在の選択。以降は拡張が記録している選択履歴から新しい順に拾う。
+        /// 履歴モードでは開始直後に全Inspectorが同じ対象を表示しているため、
+        /// これを渡さないと履歴が溜まるまで2番目以降が同じ表示のままになる。
+        /// </summary>
+        private List<UnityEngine.Object[]> BuildSeedHistory()
+        {
+            var result = new List<UnityEngine.Object[]>();
+
+            // Inspectorの数だけあれば足りる
+            int wanted = Mathf.Max(_rotationOrder.Count, 1);
+
+            var current = Selection.objects;
+            if (current != null && current.Length > 0) result.Add(current);
+
+            // 「1つ前 / 2つ前」の意味に一番近いのは記録済みの選択履歴
+            if (_historyService != null)
+            {
+                var entries = _historyService.GetHistory();
+                for (int i = entries.Count - 1; i >= 0 && result.Count < wanted; i--)
+                {
+                    var obj = entries[i]?.GetObject();
+                    if (obj == null) continue;
+                    if (ContainsAny(result, obj)) continue;
+
+                    result.Add(new[] { obj });
+                }
+            }
+
+            // それでも足りなければ、各Inspectorが今表示している内容で埋める。
+            // ローテーション開始前から個別にロックされていたInspectorは
+            // 現在の選択とは別のものを表示しているので、それを活かせる。
+            if (result.Count < wanted)
+            {
+                var buffer = new List<UnityEngine.Object>();
+                foreach (var inspector in _rotationOrder)
+                {
+                    if (result.Count >= wanted) break;
+                    if (!InspectorReflection.TryGetLockedObjects(inspector, buffer)) continue;
+                    if (buffer.Count == 0) continue;
+
+                    var objects = buffer.ToArray();
+                    if (ContainsAny(result, objects)) continue;
+
+                    result.Add(objects);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool ContainsAny(List<UnityEngine.Object[]> entries, UnityEngine.Object obj)
+        {
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                for (int j = 0; j < entry.Length; j++)
+                {
+                    if (entry[j] == obj) return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool ContainsAny(List<UnityEngine.Object[]> entries, UnityEngine.Object[] objects)
+        {
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (ContainsAny(entries, objects[i])) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 次のエディタ更新で、戦略が持つ現在の対応をInspectorへ反映する。
+        /// ローテーションの開始・モード切替はGUIの描画中に呼ばれうるため遅延させる。
+        /// </summary>
+        private void ScheduleApplyLayout()
+        {
+            // 明示的に組み直した配置は、後続の再同期に上書きさせない
+            _layoutApplyQueued = true;
+
+            EditorApplication.delayCall += () =>
+            {
+                _layoutApplyQueued = false;
+
+                if (_disposed || !_isEnabled || _isPaused) return;
+                if (_isUpdating) return;
+                if (_rotationOrder.Count == 0) return;
+                if (!InspectorReflection.IsDirectUpdateAvailable) return;
+
+                _isUpdating = true;
+                _updateStartTime = EditorApplication.timeSinceStartup;
+
+                try
+                {
+                    _strategy.ApplyLayout(this);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[InspectorManager] Rotation layout failed: {ex.Message}");
+                }
+                finally
+                {
+                    _isUpdating = false;
+                }
+            };
+        }
+
+        /// <summary>
         /// 次のエディタ更新でロック状態を貼り直す。
         /// Inspector 側の OnEnable / RestoreLockStateFromSerializedData より
         /// 後に走らせる必要があるため遅延させる。
@@ -651,6 +782,36 @@ namespace InspectorManager.Controllers
                     _lastAssigned.Remove(inspector);
                 }
             }
+
+            ReseedStrategyFromDisplay();
+        }
+
+        /// <summary>
+        /// 実際にInspectorが表示している内容から戦略の内部状態を作り直す。
+        ///
+        /// ドメインリロードを跨ぐと戦略は新しいインスタンスになり、履歴が空になる。
+        /// そのまま動かすと、履歴が溜まるまで後ろのInspectorが更新されず
+        /// リロード前の内容と重複したままになる。
+        /// 表示は Unity 側が復元しているので、それをそのまま内部状態にする。
+        /// </summary>
+        private void ReseedStrategyFromDisplay()
+        {
+            // 明示的に組み直した配置を待っている最中は触らない
+            if (_layoutApplyQueued) return;
+            if (_rotationOrder.Count == 0) return;
+
+            var display = new List<UnityEngine.Object[]>(_rotationOrder.Count);
+            foreach (var inspector in _rotationOrder)
+            {
+                if (_lastAssigned.TryGetValue(inspector, out var objects) && objects != null && objects.Length > 0)
+                {
+                    display.Add(objects);
+                }
+            }
+
+            if (display.Count == 0) return;
+
+            _strategy.Seed(display);
         }
 
         /// <summary>

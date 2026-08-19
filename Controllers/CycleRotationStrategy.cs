@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace InspectorManager.Controllers
 {
     /// <summary>
@@ -24,9 +26,15 @@ namespace InspectorManager.Controllers
             context.NotifyUpdated(target, selection);
         }
 
-        public void Seed(UnityEngine.Object[] selection)
+        public void Seed(IReadOnlyList<UnityEngine.Object[]> recent)
         {
             // 進行位置は _rotationOrder 側が持つため、種を受け取る必要はない
+        }
+
+        public void ApplyLayout(IRotationContext context)
+        {
+            // サイクルは「次の1つ」だけを書き換えるモードなので、
+            // 開始時に既存の表示を作り変えることはしない
         }
 
         public void Reset()
