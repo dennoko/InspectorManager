@@ -16,15 +16,7 @@ namespace InspectorManager.Controllers
         // 「すべてリセット」で設定インスタンスごと差し替わるため readonly にはできない
         private InspectorManagerSettings _settings;
 
-        private bool _isRecordingEnabled = true;
-
-        public bool IsRecordingEnabled
-        {
-            get => _isRecordingEnabled;
-            set => _isRecordingEnabled = value;
-        }
-
-        public HistoryController(
+public HistoryController(
             IHistoryService historyService,
             IFavoritesService favoritesService,
             InspectorManagerSettings settings)
@@ -78,7 +70,6 @@ namespace InspectorManager.Controllers
 
         private void OnSelectionChanged()
         {
-            if (!_isRecordingEnabled) return;
             if (_settings == null) return;
 
             var activeObject = Selection.activeObject;

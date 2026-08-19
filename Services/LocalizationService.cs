@@ -12,8 +12,7 @@ namespace InspectorManager.Services
     {
         private const string FallbackLanguage = "ja";
 
-        private readonly IPersistenceService _persistence;
-        private readonly Dictionary<string, string> _translations = new Dictionary<string, string>();
+        private readonly Dictionary<string, string> _translations= new Dictionary<string, string>();
         private string _currentLanguage = FallbackLanguage;
 
         /// <summary>拡張機能のルートフォルダ（Assets からの相対パス）</summary>
@@ -35,12 +34,7 @@ namespace InspectorManager.Services
             }
         }
 
-        public LocalizationService(IPersistenceService persistence)
-        {
-            _persistence = persistence;
-        }
-
-        public void Initialize(string languageCode)
+public void Initialize(string languageCode)
         {
             _currentLanguage = string.IsNullOrEmpty(languageCode) ? FallbackLanguage : languageCode;
             LoadTranslations();

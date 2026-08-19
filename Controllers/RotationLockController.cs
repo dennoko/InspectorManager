@@ -111,7 +111,6 @@ namespace InspectorManager.Controllers
         }
         
         public bool AutoFocusOnUpdate { get; set; }
-        public bool BlockFolderSelection { get; set; }
 
         private bool _isPaused;
         /// <summary>
@@ -146,7 +145,6 @@ namespace InspectorManager.Controllers
 
             FilterSettings = settings;
             AutoFocusOnUpdate = settings.AutoFocusOnUpdate;
-            BlockFolderSelection = settings.BlockFolderSelection;
             Mode = settings.RotationMode;
         }
 
@@ -156,36 +154,7 @@ namespace InspectorManager.Controllers
             return _rotationOrder[0] == inspector;
         }
 
-        public int GetRotationOrderIndex(EditorWindow inspector)
-        {
-            return _rotationOrder.IndexOf(inspector);
-        }
-
-        public List<EditorWindow> GetRotationOrder()
-        {
-            return new List<EditorWindow>(_rotationOrder);
-        }
-
-        public int CurrentTargetIndex
-        {
-            get
-            {
-                if (_rotationOrder.Count == 0) return 0;
-                var currentInspectors = _inspectorService.GetAllInspectors();
-                var target = _rotationOrder.FirstOrDefault();
-                
-                if (target != null)
-                {
-                    for (int i = 0; i < currentInspectors.Count; i++)
-                    {
-                        if (currentInspectors[i] == target) return i;
-                    }
-                }
-                return 0;
-            }
-        }
-
-        public RotationLockController(
+public RotationLockController(
             IInspectorWindowService inspectorService,
             IPersistenceService persistence)
         {
@@ -362,25 +331,7 @@ namespace InspectorManager.Controllers
             return _exclusionManager.IsExcluded(inspector);
         }
 
-        public List<EditorWindow> GetExcludedInspectors()
-        {
-            // _exclusionManager doesn't expose list directly, so filter from all inspectors
-            // Or better, let ExclusionManager expose it? 
-            // Since ExclusionManager is private field here, we can just rely on IsExcluded check against all inspectors
-            // But for efficiency, let's ask _inspectorService for all, then filter.
-            var all = _inspectorService.GetAllInspectors();
-            var excluded = new List<EditorWindow>();
-            foreach(var window in all)
-            {
-                if (IsExcluded(window))
-                {
-                    excluded.Add(window);
-                }
-            }
-            return excluded;
-        }
-
-        public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWindow> excluded, out List<EditorWindow> unmanaged)
+public void GetInspectorLists(out List<EditorWindow> rotation, out List<EditorWindow> excluded, out List<EditorWindow> unmanaged)
         {
             var all = _inspectorService.GetAllInspectors();
             rotation = new List<EditorWindow>(_rotationOrder);
@@ -400,39 +351,7 @@ namespace InspectorManager.Controllers
             }
         }
 
-        /// <summary>
-        /// 全Inspectorリスト内でのインデックス（1始まり）を取得（固定番号用）
-        /// </summary>
-        public int GetWindowIndex(EditorWindow inspector)
-        {
-            var all = _inspectorService.GetAllInspectors();
-            int index = -1;
-            // リスト内でインスタンスを検索
-            for(int i=0; i<all.Count; i++)
-            {
-                if(all[i] == inspector)
-                {
-                    index = i;
-                    break;
-                }
-            }
-            return index >= 0 ? index + 1 : -1;
-        }
-
-        // 履歴モード時の役割ラベルを取得
-        public string GetInspectionRoleLabel(EditorWindow inspector)
-        {
-            if (Mode != RotationMode.History) return null;
-            
-            int index = _rotationOrder.IndexOf(inspector);
-            if (index < 0) return null;
-
-            // 0 = 最新, 1 = 1つ前, 2 = 2つ前 ...
-            if (index == 0) return "History_Latest";
-            return "History_Previous"; // Needs format arg
-        }
-
-        /// <summary>
+/// <summary>
         /// Inspector数の変更を検出して対応
         /// </summary>
         public void SyncInspectorList()
@@ -556,20 +475,7 @@ namespace InspectorManager.Controllers
             return inspector != null && _userUnlocked.Contains(inspector);
         }
 
-        public void RotateToNext()
-        {
-            if (!_isEnabled) return;
-            SyncInspectorList();
-            
-            if (_rotationOrder.Count > 0)
-            {
-                var current = _rotationOrder[0];
-                _rotationOrder.RemoveAt(0);
-                _rotationOrder.Add(current);
-            }
-        }
-
-        private void OnSelectionChanged()
+private void OnSelectionChanged()
         {
             if (!_isEnabled) return;
             if (_isPaused) return;
@@ -733,27 +639,7 @@ namespace InspectorManager.Controllers
             }
         }
 
-        /// <summary>
-        /// 特定のInspectorを次の更新対象に設定
-        /// </summary>
-        public void SetNextTargetInspector(int index)
-        {
-            if (!_isEnabled) return;
-            SyncInspectorList();
-            
-            var inspectors = _inspectorService.GetAllInspectors();
-            if (index < 0 || index >= inspectors.Count) return;
-
-            var targetInspector = inspectors[index];
-
-            if (_rotationOrder.Contains(targetInspector))
-            {
-                _rotationOrder.Remove(targetInspector);
-                _rotationOrder.Insert(0, targetInspector);
-            }
-        }
-
-        /// <summary>
+/// <summary>
         /// ローテーション順序内のInspectorを並び替える（参照指定）。
         /// ドラッグ中にリスト構成が変化してもインデックスがずれないよう、
         /// UI側はこちらを使う。

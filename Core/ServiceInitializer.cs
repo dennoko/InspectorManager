@@ -31,7 +31,7 @@ namespace InspectorManager.Core
             var persistence = new EditorPrefsPersistence();
             ServiceLocator.Instance.Register<IPersistenceService, EditorPrefsPersistence>(persistence);
 
-            var localization = new LocalizationService(persistence);
+            var localization = new LocalizationService();
             ServiceLocator.Instance.Register<ILocalizationService, LocalizationService>(localization);
 
             var inspector = new InspectorWindowService();

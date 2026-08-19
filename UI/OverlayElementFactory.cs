@@ -70,21 +70,7 @@ namespace InspectorManager.UI
             return overlay;
         }
 
-        /// <summary>
-        /// ロック状態に応じてボタンの見た目を更新
-        /// </summary>
-        public static void UpdateLockButton(Button button, bool isLocked, string label)
-        {
-            if (button == null) return;
-
-            button.text = label;
-            var bgColor = isLocked
-                ? new Color(0.85f, 0.30f, 0.25f, 0.60f)
-                : new Color(0.20f, 0.65f, 0.35f, 0.50f);
-            button.style.backgroundColor = new StyleColor(bgColor);
-        }
-
-        /// <summary>
+/// <summary>
         /// NEXTバッジ用のラベルを生成
         /// </summary>
         public static Label CreateNextBadge(string text)
