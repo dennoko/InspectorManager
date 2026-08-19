@@ -690,6 +690,11 @@ namespace InspectorManager.Controllers
                 // 履歴の先頭に新しい選択を追加
                 _selectionHistory.Insert(0, newSelection);
 
+                // 破棄済みオブジェクトを取り除いて詰める。
+                // 詰めずにスキップすると、そのInspectorだけ古い表示が残り
+                // 「最新／1つ前／2つ前」の対応関係が崩れてしまう。
+                CompactSelectionHistory();
+
                 // 履歴をInspector数+余裕分まで保持
                 int maxHistory = _rotationOrder.Count + 5;
                 while (_selectionHistory.Count > maxHistory)
@@ -702,13 +707,7 @@ namespace InspectorManager.Controllers
                 {
                     if (i >= _selectionHistory.Count) break;
 
-                    var inspector = _rotationOrder[i];
-                    var historyObjects = _selectionHistory[i];
-
-                    // nullや破棄済みオブジェクトはスキップ
-                    if (historyObjects == null || historyObjects.Length == 0) continue;
-
-                    InspectorReflection.SetInspectedObjects(inspector, historyObjects);
+                    InspectorReflection.SetInspectedObjects(_rotationOrder[i], _selectionHistory[i]);
                 }
 
                 // 最初のInspectorの更新完了を通知
@@ -730,6 +729,45 @@ namespace InspectorManager.Controllers
             finally
             {
                 _isUpdating = false;
+            }
+        }
+
+        /// <summary>
+        /// 選択履歴から破棄済みオブジェクトを取り除き、空になったエントリを詰める。
+        /// </summary>
+        private void CompactSelectionHistory()
+        {
+            for (int i = _selectionHistory.Count - 1; i >= 0; i--)
+            {
+                var entry = _selectionHistory[i];
+
+                if (entry == null || entry.Length == 0)
+                {
+                    _selectionHistory.RemoveAt(i);
+                    continue;
+                }
+
+                int aliveCount = 0;
+                for (int j = 0; j < entry.Length; j++)
+                {
+                    if (entry[j] != null) aliveCount++;
+                }
+
+                if (aliveCount == entry.Length) continue;
+
+                if (aliveCount == 0)
+                {
+                    _selectionHistory.RemoveAt(i);
+                    continue;
+                }
+
+                var alive = new UnityEngine.Object[aliveCount];
+                int k = 0;
+                for (int j = 0; j < entry.Length; j++)
+                {
+                    if (entry[j] != null) alive[k++] = entry[j];
+                }
+                _selectionHistory[i] = alive;
             }
         }
 
