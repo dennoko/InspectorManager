@@ -479,7 +479,21 @@ namespace InspectorManager.Controllers
         {
             if (_rotationOrder.Count == 0) return;
 
+            // 直接更新が使えない場合はサイクルモードにフォールバックする。
+            // PerformRotationUpdate は delayCall による非同期経路を持ち _isUpdating を
+            // 自前で管理するため、この分岐は try/finally の外で処理しなければならない。
+            // （try 内で return しても finally は実行され、delayCall 待ちのフラグを
+            //   false に踏み潰してしまい、対象Inspectorが即座に再ロックされていた）
+            if (!InspectorReflection.IsDirectUpdateAvailable)
+            {
+                Debug.LogWarning("[InspectorManager] Direct update not available, falling back to Cycle mode.");
+                _selectionHistory.Clear();
+                PerformRotationUpdate(newSelection);
+                return;
+            }
+
             _isUpdating = true;
+            _updateStartTime = EditorApplication.timeSinceStartup;
 
             try
             {
@@ -491,16 +505,6 @@ namespace InspectorManager.Controllers
                 while (_selectionHistory.Count > maxHistory)
                 {
                     _selectionHistory.RemoveAt(_selectionHistory.Count - 1);
-                }
-
-                if (!InspectorReflection.IsDirectUpdateAvailable)
-                {
-                    // 直接更新が使えない場合はサイクルモードにフォールバック
-                    Debug.LogWarning("[InspectorManager] Direct update not available, falling back to Cycle mode.");
-                    _selectionHistory.Clear();
-                    _isUpdating = false;
-                    PerformRotationUpdate(newSelection);
-                    return;
                 }
 
                 // 各Inspectorに対応する履歴を設定
