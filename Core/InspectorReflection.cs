@@ -104,11 +104,16 @@ namespace InspectorManager.Core
                 );
 
                 _directUpdateAvailable = (_trackerField != null && _setObjectsLockedMethod != null);
-                if (_directUpdateAvailable)
+                if (!_directUpdateAvailable)
                 {
-                    Debug.Log("[InspectorManager] Direct Inspector update mode available.");
+                    // 直接更新が使えないのは想定外の状況なので警告する。
+                    // 使える場合は正常系であり、ドメインリロードのたびに
+                    // Console を汚さないよう何も出力しない。
+                    Debug.LogWarning(
+                        "[InspectorManager] Direct Inspector update is unavailable on this Unity version. " +
+                        "Falling back to the lock/unlock method.");
                 }
-            }
+}
             catch (Exception ex)
             {
                 Debug.LogError($"[InspectorManager] Reflection initialization failed: {ex.Message}");
