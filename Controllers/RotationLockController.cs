@@ -10,8 +10,15 @@ using UnityEngine;
 namespace InspectorManager.Controllers
 {
     /// <summary>
-    /// ローテーションロック機能の制御
-    /// 常時全Inspectorをロックし、Selection変更時のみ対象Inspectorを一瞬アンロックして更新させる方式。
+    /// ローテーションロック機能の制御。
+    ///
+    /// 対象のInspectorは常にロック状態に保ち、選択変更時に
+    /// ActiveEditorTracker へ直接表示対象を書き込んで更新する。
+    /// この内部APIが使えない環境では、対象を一瞬アンロックして
+    /// Unity 自身に反映させる旧方式へフォールバックする。
+    ///
+    /// どのInspectorに何を表示するかは IRotationStrategy が決め、
+    /// 本クラスはロック制御・状態の追従・永続化を担う。
     /// </summary>
     public class RotationLockController : IRotationContext, IDisposable
     {
