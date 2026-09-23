@@ -701,28 +701,36 @@ namespace InspectorManager.Controllers
             EditorApplication.delayCall += () =>
             {
                 _layoutApplyQueued = false;
-
-                if (_disposed || !_isEnabled || _isPaused) return;
-                if (_isUpdating) return;
-                if (_rotationOrder.Count == 0) return;
-                if (!InspectorReflection.IsDirectUpdateAvailable) return;
-
-                _isUpdating = true;
-                _updateStartTime = EditorApplication.timeSinceStartup;
-
-                try
-                {
-                    _strategy.ApplyLayout(this);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[InspectorManager] Rotation layout failed: {ex.Message}");
-                }
-                finally
-                {
-                    _isUpdating = false;
-                }
+                ApplyLayoutNow();
             };
+        }
+
+        /// <summary>
+        /// 戦略が持つ現在の対応をInspectorへ即座に反映する。
+        /// GUIの描画中には呼ばないこと（delayCall などから呼ぶ）。
+        /// </summary>
+        private void ApplyLayoutNow()
+        {
+            if (_disposed || !_isEnabled || _isPaused) return;
+            if (_isUpdating) return;
+            if (_rotationOrder.Count == 0) return;
+            if (!InspectorReflection.IsDirectUpdateAvailable) return;
+
+            _isUpdating = true;
+            _updateStartTime = EditorApplication.timeSinceStartup;
+
+            try
+            {
+                _strategy.ApplyLayout(this);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[InspectorManager] Rotation layout failed: {ex.Message}");
+            }
+            finally
+            {
+                _isUpdating = false;
+            }
         }
 
         /// <summary>
@@ -754,6 +762,11 @@ namespace InspectorManager.Controllers
         /// 作り直され、ロックが外れたまま復帰することがある。
         /// この状態を放置すると、そのInspectorは選択に追従してしまい
         /// ローテーションが崩れる。
+        ///
+        /// また Unity 2022.3 の一部バージョンでは、プレイモードから戻った後の
+        /// トラッカーが表示を保ったまま応答しなくなる（UUM-64580）。
+        /// 割り当てキャッシュが「同じ内容」と判定すると以後の書き込みが
+        /// スキップされ、そのInspectorは更新されなくなるため、ここで作り直す。
         /// </summary>
         private void ReassertLockStates()
         {
@@ -770,6 +783,8 @@ namespace InspectorManager.Controllers
                 {
                     SetInspectorLocked(inspector, true);
                 }
+
+                InspectorReflection.ForceRebuild(inspector);
 
                 // リロードを跨いだ後の割り当てキャッシュは信用できない。
                 // Inspectorが実際に保持している対象で作り直す。
@@ -793,6 +808,11 @@ namespace InspectorManager.Controllers
         /// そのまま動かすと、履歴が溜まるまで後ろのInspectorが更新されず
         /// リロード前の内容と重複したままになる。
         /// 表示は Unity 側が復元しているので、それをそのまま内部状態にする。
+        ///
+        /// ただしプレイモード中のシーンオブジェクトなど、復元できなかった対象がある
+        /// Inspectorは現在の選択でロックし直されるため、表示が重複しうる。
+        /// 重複は Seed で除かれて履歴が足りなくなるので、選択履歴で補い、
+        /// その場で配置し直して「複数のInspectorが同じ内容」のまま残さない。
         /// </summary>
         private void ReseedStrategyFromDisplay()
         {
@@ -809,9 +829,11 @@ namespace InspectorManager.Controllers
                 }
             }
 
-            if (display.Count == 0) return;
+            // Seed は重複を無視するので、表示の後ろに補充候補を足すだけでよい
+            display.AddRange(BuildSeedHistory());
 
             _strategy.Seed(display);
+            ApplyLayoutNow();
         }
 
         /// <summary>

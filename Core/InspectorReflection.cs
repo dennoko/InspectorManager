@@ -20,6 +20,7 @@ namespace InspectorManager.Core
         private static MethodInfo _setObjectsLockedOnWindow;
         private static MethodInfo _getObjectsLockedOnWindow;
         private static MethodInfo _flushOptimizedGUI;
+        private static MethodInfo _prepareLockedForSerialization;
         private static bool _initialized;
         private static bool _initializationFailed;
         private static bool _directUpdateAvailable;
@@ -131,7 +132,18 @@ namespace InspectorManager.Core
                     BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public
                 );
 
-                bool trackerAccessible = _trackerProperty != null || _trackerField != null;
+                // ドメインリロードを跨いで復元するロック対象を記録し直すための内部メソッド。
+                // Unity はロックが「外れている→掛かる」に変わった瞬間にしか記録しないため、
+                // ロック中に表示対象を差し替えた場合はこちらを明示的に呼ぶ必要がある。
+                _prepareLockedForSerialization = _inspectorWindowType.GetMethod(
+                    "PrepareLockedObjectsForSerialization",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                    null,
+                    Type.EmptyTypes,
+                    null
+                );
+
+                bool trackerAccessible =_trackerProperty != null || _trackerField != null;
                 _directUpdateAvailable = _setObjectsLockedOnWindow != null
                     || (trackerAccessible && _setObjectsLockedMethod != null);
 
@@ -353,12 +365,13 @@ namespace InspectorManager.Core
                     _setObjectsLockedMethod.Invoke(fallbackTracker, new object[] { objectsList });
                 }
 
+                // 差し替えた対象をリロード後の復元用にも記録する。
+                // これをしないと、プレイモードの往復などドメインリロードのたびに
+                // 各Inspectorが「最初にロックした時点の対象」へ巻き戻ってしまう。
+                SyncLockedObjectsForSerialization(inspector);
+
                 // ForceRebuildで即時にEditorを再構築
-                var tracker = GetTracker(inspector);
-                if (tracker != null && _forceRebuildMethod != null)
-                {
-                    _forceRebuildMethod.Invoke(tracker, null);
-                }
+                ForceRebuild(inspector);
 
                 // GUI最適化ブロックのフラッシュ（表示の即時更新）。staticメソッド。
                 if (_flushOptimizedGUI != null)
@@ -373,6 +386,50 @@ namespace InspectorManager.Core
             {
                 Debug.LogWarning($"[InspectorManager] Direct update failed: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Inspectorのトラッカーを強制的に作り直す。
+        ///
+        /// Unity 2022.3 の一部バージョンには、プレイモードから戻った後に
+        /// 「最後の表示のままトラッカーが応答しなくなる」不具合がある（UUM-64580）。
+        /// 修正版の Unity は EnteredEditMode で ForceRebuild を呼んでおり、同じことを行う。
+        /// </summary>
+        public static bool ForceRebuild(EditorWindow inspector)
+        {
+            if (!IsAvailable || inspector == null || _forceRebuildMethod == null) return false;
+
+            try
+            {
+                var tracker = GetTracker(inspector);
+                if (tracker == null) return false;
+
+                _forceRebuildMethod.Invoke(tracker, null);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[InspectorManager] Tracker rebuild failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 現在のロック対象を、ドメインリロード後の復元用データへ書き写す。
+        /// 内部APIが見つからない環境では何もしない。
+        /// </summary>
+        private static void SyncLockedObjectsForSerialization(EditorWindow inspector)
+        {
+            if (_prepareLockedForSerialization == null || inspector == null) return;
+
+            try
+            {
+                _prepareLockedForSerialization.Invoke(inspector, null);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[InspectorManager] Failed to record locked objects: {ex.Message}");
             }
         }
 
