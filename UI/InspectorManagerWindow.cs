@@ -48,6 +48,9 @@ namespace InspectorManager.UI
 
         private void OnEnable()
         {
+            // 最大化などで作り直された場合は、保留していた後始末を取り消す
+            WindowCloseSuspender.Cancel();
+
             Initialize();
 
             // イベント購読
@@ -75,8 +78,23 @@ namespace InspectorManager.UI
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged -= Repaint;
 
-            // コントローラーの確実な破棄（Unregister内でDisposeも呼ばれる）
-            ServiceLocator.Instance.Unregister<RotationLockController>();
+            // 自分が生成したコントローラーだけを破棄する。
+            // 登録中のものを無条件に外すと、ウィンドウの生成・破棄の順序が前後したとき
+            // （レイアウトの読み込みや最大化など）に、別インスタンスが動かしている
+            // コントローラーまで破棄され、ローテーションが完全に止まってしまう。
+            var controller = _rotationLockController;
+            if (controller != null)
+            {
+                if (ReferenceEquals(ServiceLocator.Instance.TryResolve<RotationLockController>(), controller))
+                {
+                    // Unregister内でDisposeも呼ばれる
+                    ServiceLocator.Instance.Unregister<RotationLockController>();
+                }
+                else
+                {
+                    controller.Dispose();
+                }
+            }
             _rotationLockController = null;
 
             _historyController?.Dispose();
@@ -92,9 +110,20 @@ namespace InspectorManager.UI
         /// <summary>
         /// ウィンドウが実際に閉じられたときのみ呼ばれる（ドメインリロードでは呼ばれない）。
         /// ローテーション中のInspectorがロックされたまま取り残されないようにする。
+        ///
+        /// ただし Game ビューの「Play Maximized」では、Unity がメインウィンドウ内の
+        /// ウィンドウを一旦破棄し、プレイモード終了時に作り直す。
+        /// この破棄は閉じる操作ではないので、プレイモード中は判断を保留し、
+        /// 終了後も再生成されなかった場合にだけ後始末する。
         /// </summary>
         private void OnDestroy()
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                WindowCloseSuspender.RequestAfterPlayMode();
+                return;
+            }
+
             RotationLockController.SuspendForWindowClose(_inspectorService);
         }
 
