@@ -169,6 +169,7 @@ namespace InspectorManager.Controllers
                         _lastAssigned.Clear();
                         _strategy.Reset();
                         _exclusionManager.Clear();
+                        _layoutApplyQueued = false;
                         SaveRuntimeState();
                     }
 
@@ -317,10 +318,8 @@ namespace InspectorManager.Controllers
             var buffer = new List<UnityEngine.Object>();
             foreach (var inspector in _rotationOrder)
             {
-                if (InspectorReflection.TryGetLockedObjects(inspector, buffer) && buffer.Count > 0)
-                {
-                    _lastAssigned[inspector] = buffer.ToArray();
-                }
+                var displayed = ReadDisplayedObjects(inspector, buffer);
+                if (displayed != null) _lastAssigned[inspector] = displayed;
             }
 
             // 開始直後は全Inspectorが同じ対象（現在の選択）を表示している。
@@ -467,6 +466,13 @@ namespace InspectorManager.Controllers
         private void OnEditorUpdate()
         {
             if (_disposed || !_isEnabled) return;
+
+            // 予約された配置の組み直し（ScheduleApplyLayout）
+            if (_layoutApplyQueued && !_isUpdating)
+            {
+                _layoutApplyQueued = false;
+                ApplyLayoutNow();
+            }
 
             // 保留された選択は間隔を待たずに反映する
             if (_deferredSelection != null && !_isUpdating)
@@ -654,10 +660,9 @@ namespace InspectorManager.Controllers
                 foreach (var inspector in _rotationOrder)
                 {
                     if (result.Count >= wanted) break;
-                    if (!InspectorReflection.TryGetLockedObjects(inspector, buffer)) continue;
-                    if (buffer.Count == 0) continue;
 
-                    var objects = buffer.ToArray();
+                    var objects = ReadDisplayedObjects(inspector, buffer);
+                    if (objects == null) continue;
                     if (ContainsAny(result, objects)) continue;
 
                     result.Add(objects);
@@ -695,19 +700,16 @@ namespace InspectorManager.Controllers
         /// </summary>
         private void ScheduleApplyLayout()
         {
-            // 明示的に組み直した配置は、後続の再同期に上書きさせない
+            // 明示的に組み直した配置は、後続の再同期に上書きさせない。
+            // 実行は OnEditorUpdate が行う。delayCall に載せると、プレイモードの
+            // 切り替えを跨いだときに呼ばれないまま目印だけが残ることがあり、
+            // 以後の ReseedStrategyFromDisplay がすべて打ち切られてしまう。
             _layoutApplyQueued = true;
-
-            EditorApplication.delayCall += () =>
-            {
-                _layoutApplyQueued = false;
-                ApplyLayoutNow();
-            };
         }
 
         /// <summary>
         /// 戦略が持つ現在の対応をInspectorへ即座に反映する。
-        /// GUIの描画中には呼ばないこと（delayCall などから呼ぶ）。
+        /// GUIの描画中には呼ばないこと（OnEditorUpdate などから呼ぶ）。
         /// </summary>
         private void ApplyLayoutNow()
         {
@@ -752,6 +754,11 @@ namespace InspectorManager.Controllers
             if (_disposed) return;
             if (state != PlayModeStateChange.EnteredEditMode && state != PlayModeStateChange.EnteredPlayMode) return;
 
+            // シーンが入れ替わるので、直前の選択の記録はもう当てにならない。
+            // 残しておくと、復帰直後に同じ対象を選び直しても「変化なし」として無視される。
+            _lastKnownSelection = null;
+            _navigationTarget = null;
+
             ScheduleReassert();
         }
 
@@ -788,17 +795,29 @@ namespace InspectorManager.Controllers
 
                 // リロードを跨いだ後の割り当てキャッシュは信用できない。
                 // Inspectorが実際に保持している対象で作り直す。
-                if (InspectorReflection.TryGetLockedObjects(inspector, buffer) && buffer.Count > 0)
-                {
-                    _lastAssigned[inspector] = buffer.ToArray();
-                }
-                else
-                {
-                    _lastAssigned.Remove(inspector);
-                }
+                var displayed = ReadDisplayedObjects(inspector, buffer);
+                if (displayed != null) _lastAssigned[inspector] = displayed;
+                else _lastAssigned.Remove(inspector);
             }
 
             ReseedStrategyFromDisplay();
+        }
+
+        /// <summary>
+        /// Inspectorがロック表示している対象を、破棄済みのものを除いて読み取る。
+        /// 読めない・生きている対象が無い場合は null。
+        ///
+        /// プレイモードを抜けた直後は、プレイ中のシーンオブジェクトが
+        /// 破棄済みのまま残っている。これを割り当てキャッシュに入れると
+        /// 「同じ内容」と判定されて以後の書き込みがスキップされ、
+        /// そのInspectorは空の表示のまま更新されなくなる。
+        /// </summary>
+        private static UnityEngine.Object[] ReadDisplayedObjects(EditorWindow inspector, List<UnityEngine.Object> buffer)
+        {
+            if (!InspectorReflection.TryGetLockedObjects(inspector, buffer)) return null;
+            if (buffer.Count == 0) return null;
+
+            return HistoryRotationStrategy.Alive(buffer.ToArray());
         }
 
         /// <summary>
@@ -864,6 +883,10 @@ namespace InspectorManager.Controllers
         private bool AssignToInspector(EditorWindow inspector, UnityEngine.Object[] objects)
         {
             if (inspector == null || objects == null || objects.Length == 0) return false;
+
+            // 破棄済み同士も「同じ」と判定されてしまうので、生きているものだけで比べる
+            objects = HistoryRotationStrategy.Alive(objects);
+            if (objects == null) return false;
 
             if (_lastAssigned.TryGetValue(inspector, out var current)
                 && IsSameSelection(current, objects))

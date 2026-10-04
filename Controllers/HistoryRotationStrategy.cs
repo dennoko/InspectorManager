@@ -71,8 +71,11 @@ namespace InspectorManager.Controllers
             // 「2番目と3番目が同じ」状態になる。
             for (int i = 0; i < recent.Count; i++)
             {
-                var entry = recent[i];
-                if (entry == null || entry.Length == 0) continue;
+                // プレイモード復帰直後の表示には破棄済みオブジェクトが残っている。
+                // そのまま種にすると「同じ内容」と判定されて書き込みがスキップされ、
+                // そのInspectorは破棄済みの表示のまま固まってしまう。
+                var entry = Alive(recent[i]);
+                if (entry == null) continue;
                 if (IndexOf(entry) >= 0) continue;
 
                 _history.Add(entry);
@@ -137,36 +140,36 @@ namespace InspectorManager.Controllers
         {
             for (int i = _history.Count - 1; i >= 0; i--)
             {
-                var entry = _history[i];
-
-                if (entry == null || entry.Length == 0)
-                {
-                    _history.RemoveAt(i);
-                    continue;
-                }
-
-                int aliveCount = 0;
-                for (int j = 0; j < entry.Length; j++)
-                {
-                    if (entry[j] != null) aliveCount++;
-                }
-
-                if (aliveCount == entry.Length) continue;
-
-                if (aliveCount == 0)
-                {
-                    _history.RemoveAt(i);
-                    continue;
-                }
-
-                var alive = new UnityEngine.Object[aliveCount];
-                int k = 0;
-                for (int j = 0; j < entry.Length; j++)
-                {
-                    if (entry[j] != null) alive[k++] = entry[j];
-                }
-                _history[i] = alive;
+                var alive = Alive(_history[i]);
+                if (alive == null) _history.RemoveAt(i);
+                else _history[i] = alive;
             }
+        }
+
+        /// <summary>
+        /// 破棄済みオブジェクトを除いた選択集合を返す。生きているものが無ければ null。
+        /// 全て生きている場合は元の配列をそのまま返す。
+        /// </summary>
+        internal static UnityEngine.Object[] Alive(UnityEngine.Object[] entry)
+        {
+            if (entry == null || entry.Length == 0) return null;
+
+            int aliveCount = 0;
+            for (int j = 0; j < entry.Length; j++)
+            {
+                if (entry[j] != null) aliveCount++;
+            }
+
+            if (aliveCount == entry.Length) return entry;
+            if (aliveCount == 0) return null;
+
+            var alive = new UnityEngine.Object[aliveCount];
+            int k = 0;
+            for (int j = 0; j < entry.Length; j++)
+            {
+                if (entry[j] != null) alive[k++] = entry[j];
+            }
+            return alive;
         }
     }
 }
