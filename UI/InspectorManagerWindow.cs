@@ -17,7 +17,6 @@ namespace InspectorManager.UI
         private HistoryListView _historyListView;
         private FavoritesListView _favoritesListView;
         private SettingsTabView _settingsTabView;
-        private InspectorOverlayController _overlayController;
 
         // Controllers
         private RotationLockController _rotationLockController;
@@ -78,31 +77,11 @@ namespace InspectorManager.UI
             if (_localizationService != null)
                 _localizationService.OnLanguageChanged -= Repaint;
 
-            // 自分が生成したコントローラーだけを破棄する。
-            // 登録中のものを無条件に外すと、ウィンドウの生成・破棄の順序が前後したとき
-            // （レイアウトの読み込みや最大化など）に、別インスタンスが動かしている
-            // コントローラーまで破棄され、ローテーションが完全に止まってしまう。
-            var controller = _rotationLockController;
-            if (controller != null)
-            {
-                if (ReferenceEquals(ServiceLocator.Instance.TryResolve<RotationLockController>(), controller))
-                {
-                    // Unregister内でDisposeも呼ばれる
-                    ServiceLocator.Instance.Unregister<RotationLockController>();
-                }
-                else
-                {
-                    controller.Dispose();
-                }
-            }
+            // コントローラーとサービスの寿命は InspectorManagerHost が管理する。
+            // OnDisable はドメインリロードやタブ切替でも呼ばれるため、ここでは
+            // このウィンドウの参照とUIイベント購読だけを外す。
             _rotationLockController = null;
-
-            _historyController?.Dispose();
             _historyController = null;
-
-            // オーバーレイコントローラの破棄
-            _overlayController?.Dispose();
-            _overlayController = null;
 
             _isInitialized = false;
         }
@@ -118,39 +97,48 @@ namespace InspectorManager.UI
         /// </summary>
         private void OnDestroy()
         {
+            if (HasOtherOpenInstances()) return;
+
+            var inspectorService = _inspectorService ?? new InspectorWindowService();
+
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 WindowCloseSuspender.RequestAfterPlayMode();
+                InspectorManagerHost.Shutdown();
                 return;
             }
 
-            RotationLockController.SuspendForWindowClose(_inspectorService);
+            InspectorManagerHost.Shutdown();
+            RotationLockController.SuspendForWindowClose(inspectorService);
+        }
+
+        private bool HasOtherOpenInstances()
+        {
+            var windows = Resources.FindObjectsOfTypeAll<InspectorManagerWindow>();
+            for (int i = 0; i < windows.Length; i++)
+            {
+                if (windows[i] != null && windows[i] != this) return true;
+            }
+            return false;
         }
 
         private void Initialize()
         {
             if (_isInitialized) return;
 
-            // サービスの初期化
-            var result = ServiceInitializer.InitializeAll();
-            _persistenceService = result.PersistenceService;
-            _localizationService = result.LocalizationService;
-            _inspectorService = result.InspectorService;
-            _historyService = result.HistoryService;
-            _favoritesService = result.FavoritesService;
-            _settings = result.Settings;
+            // バックグラウンド実行基盤の起動（または既存インスタンスの取得）
+            var runtime = InspectorManagerHost.EnsureStarted();
+            _persistenceService = runtime.PersistenceService;
+            _localizationService = runtime.LocalizationService;
+            _inspectorService = runtime.InspectorService;
+            _historyService = runtime.HistoryService;
+            _favoritesService = runtime.FavoritesService;
+            _settings = runtime.Settings;
+            _rotationLockController = runtime.RotationLockController;
+            _historyController = runtime.HistoryController;
 
             // ウィンドウタイトル更新
             titleContent = new GUIContent("Inspector Manager");
-
-            // コントローラーの初期化
-            // 履歴モードの初期表示を埋めるため、選択履歴も渡す
-            _rotationLockController = new RotationLockController(
-                _inspectorService, _persistenceService, _historyService);
-            _rotationLockController.ApplySettings(_settings);
-            // HotkeyControllerからアクセスできるようServiceLocatorに登録
-            ServiceLocator.Instance.Register(_rotationLockController);
-            _historyController = new HistoryController(_historyService, _favoritesService, _settings);
 
             // ビューの初期化
             _inspectorStatusView = new InspectorStatusView(
@@ -167,13 +155,6 @@ namespace InspectorManager.UI
                 _settings);
             _settingsTabView.OnSettingsChanged = SaveSettings;
             _settingsTabView.OnTitleUpdateRequired = title => titleContent = new GUIContent(title);
-
-            // オーバーレイ初期化
-            _overlayController?.Dispose();
-            _overlayController = new InspectorOverlayController(
-                _inspectorService, 
-                _localizationService,
-                _rotationLockController);
 
             _isInitialized = true;
         }
@@ -352,6 +333,7 @@ namespace InspectorManager.UI
 
             _rotationLockController?.ApplySettings(_settings);
             _historyController?.ApplySettings(_settings);
+            InspectorManagerHost.UpdateSettings(_settings);
         }
 
         // イベントハンドラー
